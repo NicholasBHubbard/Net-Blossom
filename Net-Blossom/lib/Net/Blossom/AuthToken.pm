@@ -41,6 +41,8 @@ sub new {
         croak "hash must be 64-char lowercase hex"
             unless defined $hash && $hash =~ $HEX64;
     }
+    croak "$args{action} authorization requires at least one hash"
+        if $args{action} =~ /\A(?:upload|delete|media)\z/ && !@{$args{hashes}};
 
     $args{created_at} = time() unless defined $args{created_at};
     croak "created_at must be a non-negative integer"

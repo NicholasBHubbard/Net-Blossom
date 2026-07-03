@@ -109,4 +109,20 @@ subtest 'validates BUD-11 token inputs' => sub {
         qr/hash.*lowercase hex/, 'uppercase hash rejected');
 };
 
+subtest 'requires hash scope for BUD-11 hash-scoped actions' => sub {
+    my $key = Local::Key->new($PUBKEY);
+
+    for my $action (qw(upload delete media)) {
+        like(dies { Net::Blossom::AuthToken->new(key => $key, action => $action, content => 'x', expiration => 1) },
+            qr/requires at least one hash/, "$action requires default hash scope");
+        like(dies { Net::Blossom::AuthToken->new(key => $key, action => $action, content => 'x', expiration => 1, hashes => []) },
+            qr/requires at least one hash/, "$action rejects empty hash scope");
+    }
+
+    ok(Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => 1),
+        'get may omit hash scope');
+    ok(Net::Blossom::AuthToken->new(key => $key, action => 'list', content => 'x', expiration => 1),
+        'list does not use hash scope');
+};
+
 done_testing;

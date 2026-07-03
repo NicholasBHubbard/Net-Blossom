@@ -43,4 +43,19 @@ subtest 'BUD-11 Authorization header uses Nostr scheme' => sub {
     like($header, qr/\ANostr /, 'Nostr scheme');
 };
 
+subtest 'BUD-11 hash-scoped endpoints require x tags' => sub {
+    for my $action (qw(upload delete media)) {
+        my $error = eval {
+            Net::Blossom::AuthToken->new(
+                key => Local::Key->new($PUBKEY),
+                action => $action,
+                content => 'Hash scoped action',
+                expiration => 1772019044,
+            );
+            undef;
+        } || $@;
+        like($error, qr/requires at least one hash/, "$action requires x tag");
+    }
+};
+
 done_testing;

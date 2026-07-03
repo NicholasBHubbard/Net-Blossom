@@ -116,6 +116,28 @@ subtest 'PUT /upload sends blob headers and parses descriptor' => sub {
     is($opts->{headers}{'X-SHA-256'}, sha256_hex($body), 'sha header');
 };
 
+subtest 'PUT /upload preserves binary and empty blob bytes' => sub {
+    for my $body (pack('C*', 0, 255, 10, 65), '') {
+        my $ua = Local::UA->new({
+            status  => 201,
+            reason  => 'Created',
+            headers => { 'content-type' => 'application/json' },
+            content => $JSON->encode(descriptor_hash()),
+        });
+        my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+        $client->upload_blob($body);
+
+        my $request = ($ua->requests)[0];
+        my ($method, $url, $opts) = @$request;
+        is($method, 'PUT', 'PUT method');
+        is($url, 'https://cdn.example.com/upload', 'upload URL');
+        is($opts->{content}, $body, 'exact request bytes');
+        is($opts->{headers}{'Content-Length'}, length($body), 'byte length header');
+        is($opts->{headers}{'X-SHA-256'}, sha256_hex($body), 'sha256 over exact bytes');
+    }
+};
+
 subtest 'GET /list/<pubkey> parses descriptors and query params' => sub {
     my $ua = Local::UA->new({
         status  => 200,
@@ -153,6 +175,59 @@ subtest 'DELETE /<sha256> accepts 204 response' => sub {
     is($url, "https://cdn.example.com/$HASH", 'delete URL');
 };
 
+subtest 'adds static Authorization header' => sub {
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => {},
+        content => 'blob',
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => 'Nostr static-token',
+    );
+
+    $client->get_blob($HASH);
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($method, 'GET', 'GET method');
+    is($url, "https://cdn.example.com/$HASH", 'GET URL');
+    is($opts->{headers}{Authorization}, 'Nostr static-token', 'authorization header');
+};
+
+subtest 'passes request context to auth callback' => sub {
+    my @seen;
+    my $body = 'auth upload';
+    my $ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => sub {
+            push @seen, { @_ };
+            return 'Nostr callback-token';
+        },
+    );
+
+    $client->upload_blob($body);
+
+    is(scalar @seen, 1, 'auth callback called once');
+    is($seen[0]{method}, 'PUT', 'method context');
+    is($seen[0]{url}, 'https://cdn.example.com/upload', 'url context');
+    is($seen[0]{action}, 'upload', 'action context');
+    is($seen[0]{sha256}, sha256_hex($body), 'sha256 context');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($opts->{headers}{Authorization}, 'Nostr callback-token', 'callback authorization header');
+};
+
 subtest 'HTTP errors croak as Net::Blossom::Error with X-Reason' => sub {
     my $ua = Local::UA->new({
         status  => 403,
@@ -167,6 +242,50 @@ subtest 'HTTP errors croak as Net::Blossom::Error with X-Reason' => sub {
     is($error->status, 403, 'status');
     is($error->x_reason, 'server policy rejected this blob', 'x-reason');
     like("$error", qr/403 Forbidden: server policy rejected this blob/, 'stringifies usefully');
+};
+
+subtest 'malformed server JSON responses croak clearly' => sub {
+    my $bad_json_ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => '{',
+    });
+    my $bad_json_client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $bad_json_ua);
+    like(dies { $bad_json_client->upload_blob('x') },
+        qr/invalid JSON response/, 'invalid upload JSON rejected');
+
+    my $array_ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode([descriptor_hash()]),
+    });
+    my $array_client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $array_ua);
+    like(dies { $array_client->upload_blob('x') },
+        qr/response body must be a JSON object/, 'upload array response rejected');
+
+    my $object_ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode({ blobs => [descriptor_hash()] }),
+    });
+    my $object_client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $object_ua);
+    like(dies { $object_client->list_blobs($PUBKEY) },
+        qr/list response must be a JSON array/, 'list object response rejected');
+
+    my %descriptor = %{ descriptor_hash() };
+    delete $descriptor{size};
+    my $bad_descriptor_ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode([\%descriptor]),
+    });
+    my $bad_descriptor_client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $bad_descriptor_ua);
+    like(dies { $bad_descriptor_client->list_blobs($PUBKEY) },
+        qr/size is required/, 'invalid list descriptor rejected');
 };
 
 done_testing;
