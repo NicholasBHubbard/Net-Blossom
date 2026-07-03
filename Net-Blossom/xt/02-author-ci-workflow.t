@@ -16,6 +16,8 @@ my $yaml = do { local $/; <$fh> };
 
 like($yaml, qr/perl-version:\s*\[\s*["']?5\.16["']?\s*,\s*["']?latest["']?\s*\]/,
     'CI tests Perl 5.16 and latest');
+like($yaml, qr/actions\/checkout\@v7/,
+    'CI uses current checkout action');
 like($yaml, qr/shogo82148\/actions-setup-perl\@v1/,
     'CI sets up Perl with actions-setup-perl');
 like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/Net-Blossom/,
