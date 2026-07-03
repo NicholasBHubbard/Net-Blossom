@@ -138,6 +138,53 @@ subtest 'PUT /upload preserves binary and empty blob bytes' => sub {
     }
 };
 
+subtest 'PUT /media sends media headers and parses descriptor' => sub {
+    my $body = pack('C*', 0, 255, 73, 77, 71);
+    my $ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $descriptor = $client->process_media($body, type => 'image/png');
+    isa_ok($descriptor, 'Net::Blossom::BlobDescriptor');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($method, 'PUT', 'PUT method');
+    is($url, 'https://cdn.example.com/media', 'media URL');
+    is($opts->{content}, $body, 'request body');
+    is($opts->{headers}{'Content-Type'}, 'image/png', 'content type header');
+    is($opts->{headers}{'Content-Length'}, length($body), 'content length header');
+    is($opts->{headers}{'X-SHA-256'}, sha256_hex($body), 'sha header');
+};
+
+subtest 'HEAD /media sends preflight headers and returns response' => sub {
+    my $body = 'media bytes';
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'x-reason' => 'accepted' },
+        content => '',
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $response = $client->head_media($body, type => 'image/jpeg');
+    is($response->status, 200, 'status');
+    is($response->header('x-reason'), 'accepted', 'diagnostic header');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($method, 'HEAD', 'HEAD method');
+    is($url, 'https://cdn.example.com/media', 'media URL');
+    ok(!exists $opts->{content}, 'no request body');
+    is($opts->{headers}{'X-SHA-256'}, sha256_hex($body), 'sha preflight header');
+    is($opts->{headers}{'X-Content-Type'}, 'image/jpeg', 'content type preflight header');
+    is($opts->{headers}{'X-Content-Length'}, length($body), 'content length preflight header');
+};
+
 subtest 'PUT /mirror sends JSON URL body and parses descriptor' => sub {
     my $source = "https://cdn.satellite.earth/$HASH.pdf";
     my $ua = Local::UA->new({
@@ -381,6 +428,37 @@ subtest 'passes upload auth context to mirror callback' => sub {
     my $request = ($ua->requests)[0];
     my ($method, $url, $opts) = @$request;
     is($opts->{headers}{Authorization}, 'Nostr mirror-token', 'callback authorization header');
+};
+
+subtest 'passes media auth context to callback' => sub {
+    my @seen;
+    my $body = 'auth media';
+    my $ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => sub {
+            push @seen, { @_ };
+            return 'Nostr media-token';
+        },
+    );
+
+    $client->process_media($body);
+
+    is(scalar @seen, 1, 'auth callback called once');
+    is($seen[0]{method}, 'PUT', 'method context');
+    is($seen[0]{url}, 'https://cdn.example.com/media', 'url context');
+    is($seen[0]{action}, 'media', 'action context');
+    is($seen[0]{sha256}, sha256_hex($body), 'sha256 context');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($opts->{headers}{Authorization}, 'Nostr media-token', 'callback authorization header');
 };
 
 subtest 'HTTP errors croak as Net::Blossom::Error with X-Reason' => sub {
