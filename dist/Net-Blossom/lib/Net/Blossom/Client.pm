@@ -6,6 +6,7 @@ use Net::Blossom::_ConstructorArgs ();
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::Error;
 use Net::Blossom::Response;
+use Net::Blossom::ServerList;
 
 use Carp qw(croak);
 use Class::Tiny qw(server ua auth);
@@ -87,6 +88,14 @@ sub upload_blob {
     return Net::Blossom::BlobDescriptor->from_hash(_decode_json_hash($response->content));
 }
 
+sub upload_blob_to_servers {
+    my $self = shift;
+    my ($content, $servers, %opts) = @_;
+    my @servers = _server_values($servers);
+
+    return $self->_client_for_server($servers[0])->upload_blob($content, %opts);
+}
+
 sub list_blobs {
     my $self = shift;
     my ($pubkey, %opts) = @_;
@@ -127,6 +136,34 @@ sub delete_blob {
     );
 }
 
+sub get_blob_from_servers {
+    my $self = shift;
+    my ($url, $servers, %opts) = @_;
+    my ($sha256, $extension) = Net::Blossom::ServerList->extract_blob_reference($url);
+    croak "URL does not contain a sha256 hash" unless defined $sha256;
+
+    my @servers = _server_values($servers);
+    my $last_error;
+
+    for my $server (@servers) {
+        my %get_opts = %opts;
+        $get_opts{extension} = $extension
+            if defined $extension && !defined $get_opts{extension};
+
+        my $response = eval {
+            $self->_client_for_server($server)->get_blob($sha256, %get_opts);
+        };
+        return $response unless $@;
+
+        my $error = $@;
+        die $error unless ref($error) && eval { $error->isa('Net::Blossom::Error') };
+        $last_error = $error;
+    }
+
+    die $last_error if defined $last_error;
+    croak "server list must contain at least one server";
+}
+
 sub _request {
     my $self = shift;
     my %args = @_;
@@ -165,6 +202,15 @@ sub _request {
     );
 }
 
+sub _client_for_server {
+    my ($self, $server) = @_;
+    return ref($self)->new(
+        server => $server,
+        ua     => $self->ua,
+        auth   => $self->auth,
+    );
+}
+
 sub _authorization_header {
     my $self = shift;
     my %args = @_;
@@ -177,6 +223,19 @@ sub _authorization_header {
         action => $args{action},
         sha256 => $args{sha256},
     );
+}
+
+sub _server_values {
+    my ($servers) = @_;
+    croak "servers are required" unless defined $servers;
+
+    return $servers->servers
+        if ref($servers) && eval { $servers->isa('Net::Blossom::ServerList') };
+
+    croak "servers must be a Net::Blossom::ServerList or array reference"
+        unless ref($servers) eq 'ARRAY';
+
+    return Net::Blossom::ServerList->new(servers => $servers)->servers;
 }
 
 sub _blob_path {

@@ -3,6 +3,7 @@ package Net::Blossom;
 use strictures 2;
 
 use Net::Blossom::Client;
+use Net::Blossom::ServerList;
 use Net::Blossom::URI;
 
 our $VERSION = '0.001';

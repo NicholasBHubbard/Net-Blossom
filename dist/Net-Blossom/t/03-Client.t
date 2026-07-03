@@ -175,6 +175,84 @@ subtest 'DELETE /<sha256> accepts 204 response' => sub {
     is($url, "https://cdn.example.com/$HASH", 'delete URL');
 };
 
+subtest 'PUT upload can target the first explicit server list entry' => sub {
+    my $body = 'server list upload';
+    my $ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://unused.example.com', ua => $ua);
+
+    $client->upload_blob_to_servers(
+        $body,
+        ['https://primary.example.com', 'https://backup.example.com'],
+    );
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url) = @$request;
+    is($method, 'PUT', 'PUT method');
+    is($url, 'https://primary.example.com/upload', 'first listed server URL');
+};
+
+subtest 'GET fallback tries explicit server list until one succeeds' => sub {
+    my $ua = Local::UA->new(
+        {
+            status  => 404,
+            reason  => 'Not Found',
+            headers => {},
+            content => '',
+        },
+        {
+            status  => 200,
+            reason  => 'OK',
+            headers => {},
+            content => 'blob',
+        },
+    );
+    my $client = Net::Blossom::Client->new(server => 'https://unused.example.com', ua => $ua);
+
+    my $response = $client->get_blob_from_servers(
+        "https://broken.example.com/$HASH.txt",
+        ['https://primary.example.com', 'https://backup.example.com'],
+    );
+
+    is($response->content, 'blob', 'successful response returned');
+    my @requests = $ua->requests;
+    is($requests[0][1], "https://primary.example.com/$HASH.txt", 'first server tried');
+    is($requests[1][1], "https://backup.example.com/$HASH.txt", 'second server tried');
+};
+
+subtest 'GET fallback rethrows the last Blossom error when all servers fail' => sub {
+    my $ua = Local::UA->new(
+        {
+            status  => 404,
+            reason  => 'Not Found',
+            headers => { 'x-reason' => 'primary missing' },
+            content => '',
+        },
+        {
+            status  => 503,
+            reason  => 'Service Unavailable',
+            headers => { 'x-reason' => 'backup down' },
+            content => '',
+        },
+    );
+    my $client = Net::Blossom::Client->new(server => 'https://unused.example.com', ua => $ua);
+
+    my $error = dies {
+        $client->get_blob_from_servers(
+            "https://broken.example.com/$HASH",
+            ['https://primary.example.com', 'https://backup.example.com'],
+        );
+    };
+
+    isa_ok($error, 'Net::Blossom::Error');
+    is($error->status, 503, 'last status');
+    is($error->x_reason, 'backup down', 'last x-reason');
+};
+
 subtest 'adds static Authorization header' => sub {
     my $ua = Local::UA->new({
         status  => 200,

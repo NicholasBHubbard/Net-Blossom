@@ -8,13 +8,13 @@ plan skip_all => 'AUTHOR_TESTING is not set'
     unless $ENV{AUTHOR_TESTING};
 
 my $minimum_perl = '5.016';
-my $root = "$FindBin::Bin/../..";
+my $root = _repo_root();
 
 for my $file (
-    "$root/Net-Blossom/Makefile.PL",
-    "$root/Net-Blossom/cpanfile",
-    "$root/Net-Blossom-Server/Makefile.PL",
-    "$root/Net-Blossom-Server/cpanfile",
+    "$root/dist/Net-Blossom/Makefile.PL",
+    "$root/dist/Net-Blossom/cpanfile",
+    "$root/dist/Net-Blossom-Server/Makefile.PL",
+    "$root/dist/Net-Blossom-Server/cpanfile",
 ) {
     for my $module (_dependency_modules($file)) {
         next if $module eq 'perl';
@@ -60,4 +60,17 @@ sub _dependency_modules {
     }
 
     return @modules;
+}
+
+sub _repo_root {
+    my $dir = $FindBin::Bin;
+    while (1) {
+        return $dir if -d "$dir/.git";
+
+        my $parent = "$dir/..";
+        last if $parent eq $dir;
+        $dir = $parent;
+    }
+
+    die "Unable to find repository root from $FindBin::Bin";
 }

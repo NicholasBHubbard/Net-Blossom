@@ -4,14 +4,14 @@
 /.plx/
 /blossom/
 
-/Net-Blossom/Makefile
-/Net-Blossom/MYMETA.json
-/Net-Blossom/MYMETA.yml
-/Net-Blossom/blib/
-/Net-Blossom/pm_to_blib
+/dist/Net-Blossom/Makefile
+/dist/Net-Blossom/MYMETA.json
+/dist/Net-Blossom/MYMETA.yml
+/dist/Net-Blossom/blib/
+/dist/Net-Blossom/pm_to_blib
 
-/Net-Blossom-Server/Makefile
-/Net-Blossom-Server/MYMETA.json
-/Net-Blossom-Server/MYMETA.yml
-/Net-Blossom-Server/blib/
-/Net-Blossom-Server/pm_to_blib
+/dist/Net-Blossom-Server/Makefile
+/dist/Net-Blossom-Server/MYMETA.json
+/dist/Net-Blossom-Server/MYMETA.yml
+/dist/Net-Blossom-Server/blib/
+/dist/Net-Blossom-Server/pm_to_blib

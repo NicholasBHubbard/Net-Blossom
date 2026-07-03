@@ -35,21 +35,21 @@ jobs:
       - name: Configure local lib
         run: |
           echo "$GITHUB_WORKSPACE/local/bin" >> "$GITHUB_PATH"
-          echo "PERL5LIB=$GITHUB_WORKSPACE/Net-Blossom/lib:$GITHUB_WORKSPACE/Net-Blossom-Server/lib:$GITHUB_WORKSPACE/local/lib/perl5" >> "$GITHUB_ENV"
+          echo "PERL5LIB=$GITHUB_WORKSPACE/dist/Net-Blossom/lib:$GITHUB_WORKSPACE/dist/Net-Blossom-Server/lib:$GITHUB_WORKSPACE/local/lib/perl5" >> "$GITHUB_ENV"
 
       - name: Install client dependencies
-        run: cpanm -llocal --notest --with-develop --installdeps ./Net-Blossom
+        run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom
 
       - name: Install client distribution
-        run: cpanm -llocal --notest ./Net-Blossom
+        run: cpanm -llocal --notest ./dist/Net-Blossom
 
       - name: Install server dependencies
-        run: cpanm -llocal --notest --with-develop --installdeps ./Net-Blossom-Server
+        run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server
 
       - name: Run tests
-        run: prove Net-Blossom/t Net-Blossom/t/bud Net-Blossom-Server/t
+        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t
 
       - name: Run author tests
         env:
           AUTHOR_TESTING: 1
-        run: AUTHOR_TESTING=1 prove Net-Blossom/xt Net-Blossom-Server/xt
+        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt

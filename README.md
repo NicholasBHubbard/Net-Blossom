@@ -10,8 +10,8 @@ on public media servers. The upstream protocol lives at
 
 This is a monorepo with separate CPAN distributions:
 
-- `Net-Blossom` contains protocol primitives and the client library.
-- `Net-Blossom-Server` contains server-side protocol machinery and depends on
+- `dist/Net-Blossom` contains protocol primitives and the client library.
+- `dist/Net-Blossom-Server` contains server-side protocol machinery and depends on
   `Net::Blossom`.
 
 Keeping these separate matters. Client users should not inherit server, storage,
@@ -22,8 +22,8 @@ for storage, authorization, rate limits, observability, and operational policy.
 
 This repository is in early implementation. `Net-Blossom` currently provides
 blob descriptors, response and error objects, a small HTTP client, and BUD-11
-authorization token creation, and BUD-10 Blossom URI parsing/building. Server
-behavior is still scaffold-only.
+authorization token creation, BUD-10 Blossom URI parsing/building, and BUD-03
+user server list handling. Server behavior is still scaffold-only.
 
 ## License
 
@@ -47,20 +47,20 @@ Install distribution dependencies into `local`:
 
 ```sh
 mkdir -p .cpanm/work
-/home/_73/.local/bin/plx PERL_CPANM_HOME="$PWD/.cpanm" cpanm -llocal --installdeps ./Net-Blossom
-/home/_73/.local/bin/plx PERL_CPANM_HOME="$PWD/.cpanm" cpanm -llocal --installdeps ./Net-Blossom-Server
+/home/_73/.local/bin/plx PERL_CPANM_HOME="$PWD/.cpanm" cpanm -llocal --installdeps ./dist/Net-Blossom
+/home/_73/.local/bin/plx PERL_CPANM_HOME="$PWD/.cpanm" cpanm -llocal --installdeps ./dist/Net-Blossom-Server
 ```
 
 Run tests from the repository root:
 
 ```sh
-/home/_73/.local/bin/plx prove Net-Blossom/t Net-Blossom/t/bud Net-Blossom-Server/t
+/home/_73/.local/bin/plx prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t
 ```
 
 Run author tests from the repository root:
 
 ```sh
-/home/_73/.local/bin/plx AUTHOR_TESTING=1 prove Net-Blossom/xt Net-Blossom-Server/xt
+/home/_73/.local/bin/plx AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt
 ```
 
 Inspect the active Perl layout:

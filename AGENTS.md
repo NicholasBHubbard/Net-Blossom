@@ -8,8 +8,8 @@ The repository is licensed under the GNU General Public License version 3.
 
 This is a monorepo with two CPAN distributions:
 
-- `Net-Blossom` provides shared protocol components and the client library.
-- `Net-Blossom-Server` provides server-side protocol support and depends on `Net::Blossom`.
+- `dist/Net-Blossom` provides shared protocol components and the client library.
+- `dist/Net-Blossom-Server` provides server-side protocol support and depends on `Net::Blossom`.
 
 Each distribution keeps regular tests in `t/` and author-only tests in `xt/`.
 
