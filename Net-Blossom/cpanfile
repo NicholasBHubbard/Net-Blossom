@@ -4,12 +4,7 @@ requires 'Net::Nostr::Event';
 requires 'strictures', '2';
 
 on configure => sub {
-    requires 'ExtUtils::MakeMaker', '6.64';
     requires 'strictures', '2';
-};
-
-on test => sub {
-    requires 'Test::More', '0.98';
 };
 
 on develop => sub {

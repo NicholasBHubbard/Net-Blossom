@@ -11,15 +11,11 @@ WriteMakefile(
     LICENSE          => 'gpl_3',
     MIN_PERL_VERSION => '5.016',
     CONFIGURE_REQUIRES => {
-        'ExtUtils::MakeMaker' => '6.64',
-        'strictures'          => '2',
+        'strictures' => '2',
     },
     PREREQ_PM        => {
         'Net::Blossom' => '0.001',
         'strictures'   => '2',
-    },
-    TEST_REQUIRES    => {
-        'Test::More' => '0.98',
     },
     test             => {
         TESTS => 't/*.t',
