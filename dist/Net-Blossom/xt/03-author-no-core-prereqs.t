@@ -31,6 +31,18 @@ for my $file (
     }
 }
 
+my %net_blossom_deps = map { $_ => 1 } _dependency_modules("$root/dist/Net-Blossom/Makefile.PL");
+ok($net_blossom_deps{'Net::Nostr::Core'}, 'Net-Blossom depends on Net::Nostr::Core');
+
+for my $module (qw(
+    Net::Nostr
+    Net::Nostr::Client
+    Net::Nostr::Event
+    Net::Nostr::Relay
+)) {
+    ok(!$net_blossom_deps{$module}, "Net-Blossom does not depend on $module");
+}
+
 done_testing;
 
 sub _dependency_modules {

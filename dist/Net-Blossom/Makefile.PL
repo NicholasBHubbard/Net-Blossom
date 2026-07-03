@@ -15,7 +15,7 @@ WriteMakefile(
     },
     PREREQ_PM        => {
         'Class::Tiny'       => '0',
-        'Net::Nostr::Event' => '0',
+        'Net::Nostr::Core'  => '0',
         'strictures'        => '2',
     },
     test             => {
