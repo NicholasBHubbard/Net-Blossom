@@ -23,7 +23,8 @@ for storage, authorization, rate limits, observability, and operational policy.
 This repository is in early implementation. `Net-Blossom` currently provides
 blob descriptors, response and error objects, a small HTTP client, and BUD-11
 authorization token creation, BUD-10 Blossom URI parsing/building, and BUD-03
-user server list handling. Server behavior is still scaffold-only.
+user server list handling, and BUD-04 mirror requests. Server behavior is still
+scaffold-only.
 
 ## License
 

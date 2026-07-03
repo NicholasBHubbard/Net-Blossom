@@ -138,6 +138,52 @@ subtest 'PUT /upload preserves binary and empty blob bytes' => sub {
     }
 };
 
+subtest 'PUT /mirror sends JSON URL body and parses descriptor' => sub {
+    my $source = "https://cdn.satellite.earth/$HASH.pdf";
+    my $ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $descriptor = $client->mirror_blob($source);
+    isa_ok($descriptor, 'Net::Blossom::BlobDescriptor');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    my $body = $JSON->encode({ url => $source });
+    is($method, 'PUT', 'PUT method');
+    is($url, 'https://cdn.example.com/mirror', 'mirror URL');
+    is($opts->{content}, $body, 'JSON request body');
+    is($opts->{headers}{'Content-Type'}, 'application/json', 'JSON content type');
+    is($opts->{headers}{'Content-Length'}, length($body), 'content length header');
+};
+
+subtest 'PUT /mirror accepts existing blob response' => sub {
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $descriptor = $client->mirror_blob("https://cdn.satellite.earth/$HASH.pdf");
+    is($descriptor->sha256, $HASH, 'descriptor parsed from 200 response');
+};
+
+subtest 'PUT /mirror validates local URL argument' => sub {
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => Local::UA->new);
+    like(dies { $client->mirror_blob() },
+        qr/url is required/, 'missing URL rejected');
+    like(dies { $client->mirror_blob('') },
+        qr/url is required/, 'empty URL rejected');
+    like(dies { $client->mirror_blob(['https://cdn.example.com/blob']) },
+        qr/url must be a string/, 'reference URL rejected');
+};
+
 subtest 'GET /list/<pubkey> parses descriptors and query params' => sub {
     my $ua = Local::UA->new({
         status  => 200,
@@ -304,6 +350,37 @@ subtest 'passes request context to auth callback' => sub {
     my $request = ($ua->requests)[0];
     my ($method, $url, $opts) = @$request;
     is($opts->{headers}{Authorization}, 'Nostr callback-token', 'callback authorization header');
+};
+
+subtest 'passes upload auth context to mirror callback' => sub {
+    my @seen;
+    my $source = "https://cdn.satellite.earth/$HASH.pdf";
+    my $ua = Local::UA->new({
+        status  => 201,
+        reason  => 'Created',
+        headers => { 'content-type' => 'application/json' },
+        content => $JSON->encode(descriptor_hash()),
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => sub {
+            push @seen, { @_ };
+            return 'Nostr mirror-token';
+        },
+    );
+
+    $client->mirror_blob($source);
+
+    is(scalar @seen, 1, 'auth callback called once');
+    is($seen[0]{method}, 'PUT', 'method context');
+    is($seen[0]{url}, 'https://cdn.example.com/mirror', 'url context');
+    is($seen[0]{action}, 'upload', 'mirror uses upload authorization context');
+    is($seen[0]{sha256}, $HASH, 'sha256 extracted from mirrored URL');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($opts->{headers}{Authorization}, 'Nostr mirror-token', 'callback authorization header');
 };
 
 subtest 'HTTP errors croak as Net::Blossom::Error with X-Reason' => sub {

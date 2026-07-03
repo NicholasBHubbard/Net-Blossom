@@ -16,6 +16,7 @@ use JSON::PP ();
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $JSON = JSON::PP->new->utf8;
+my $CANONICAL_JSON = JSON::PP->new->utf8->canonical;
 
 sub new {
     my $class = shift;
@@ -94,6 +95,32 @@ sub upload_blob_to_servers {
     my @servers = _server_values($servers);
 
     return $self->_client_for_server($servers[0])->upload_blob($content, %opts);
+}
+
+sub mirror_blob {
+    my $self = shift;
+    my ($url) = @_;
+    croak "url is required" unless defined $url && length $url;
+    croak "url must be a string" if ref($url);
+
+    my $content = $CANONICAL_JSON->encode({ url => $url });
+    my %headers = (
+        'Content-Type'   => 'application/json',
+        'Content-Length' => length($content),
+    );
+    my ($sha256) = Net::Blossom::ServerList->extract_blob_reference($url);
+
+    my $response = $self->_request(
+        method  => 'PUT',
+        path    => '/mirror',
+        headers => \%headers,
+        content => $content,
+        action  => 'upload',
+        sha256  => $sha256,
+        ok      => { 200 => 1, 201 => 1 },
+    );
+
+    return Net::Blossom::BlobDescriptor->from_hash(_decode_json_hash($response->content));
 }
 
 sub list_blobs {
