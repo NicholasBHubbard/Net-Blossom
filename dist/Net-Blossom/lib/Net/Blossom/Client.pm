@@ -5,6 +5,7 @@ use strictures 2;
 use Net::Blossom::_ConstructorArgs ();
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::Error;
+use Net::Blossom::PaymentRequired;
 use Net::Blossom::Response;
 use Net::Blossom::ServerList;
 
@@ -18,6 +19,7 @@ my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $HEX128 = qr/\A[0-9a-f]{128}\z/;
 my $JSON = JSON::PP->new->utf8;
 my $CANONICAL_JSON = JSON::PP->new->utf8->canonical;
+my %RESERVED_PAYMENT_METHOD = map { $_ => 1 } qw(reason sha-256 content-type content-length);
 
 sub new {
     my $class = shift;
@@ -47,6 +49,7 @@ sub get_blob {
         headers => \%headers,
         action  => 'get',
         sha256  => $sha256,
+        payment => $opts{payment},
         ok      => { map { $_ => 1 } qw(200 206 307 308) },
     );
 }
@@ -61,6 +64,7 @@ sub head_blob {
         path   => $self->_blob_path($sha256, $opts{extension}),
         action => 'get',
         sha256 => $sha256,
+        payment => $opts{payment},
         ok     => { map { $_ => 1 } qw(200 307 308) },
     );
 }
@@ -84,6 +88,7 @@ sub upload_blob {
         content => $content,
         action  => 'upload',
         sha256  => $sha256,
+        payment => $opts{payment},
         ok      => { 200 => 1, 201 => 1 },
     );
 
@@ -108,6 +113,7 @@ sub head_upload {
         headers => \%headers,
         action  => 'upload',
         sha256  => $sha256,
+        payment => $opts{payment},
         ok      => { 200 => 1 },
     );
 }
@@ -131,6 +137,7 @@ sub process_media {
         content => $content,
         action  => 'media',
         sha256  => $sha256,
+        payment => $opts{payment},
         ok      => { 200 => 1, 201 => 1 },
     );
 
@@ -155,6 +162,7 @@ sub head_media {
         headers => \%headers,
         action  => 'media',
         sha256  => $sha256,
+        payment => $opts{payment},
         ok      => { 200 => 1 },
     );
 }
@@ -169,7 +177,7 @@ sub upload_blob_to_servers {
 
 sub mirror_blob {
     my $self = shift;
-    my ($url) = @_;
+    my ($url, %opts) = @_;
     croak "url is required" unless defined $url && length $url;
     croak "url must be a string" if ref($url);
 
@@ -187,6 +195,7 @@ sub mirror_blob {
         content => $content,
         action  => 'upload',
         sha256  => $sha256,
+        payment => $opts{payment},
         ok      => { 200 => 1, 201 => 1 },
     );
 
@@ -195,7 +204,7 @@ sub mirror_blob {
 
 sub report_blob {
     my $self = shift;
-    my ($event) = @_;
+    my ($event, %opts) = @_;
     _validate_report_event($event);
 
     my $content = $CANONICAL_JSON->encode($event);
@@ -210,6 +219,7 @@ sub report_blob {
         headers => \%headers,
         content => $content,
         action  => 'report',
+        payment => $opts{payment},
         ok      => { map { $_ => 1 } 200 .. 299 },
     );
 }
@@ -232,6 +242,7 @@ sub list_blobs {
         method => 'GET',
         path   => $path,
         action => 'list',
+        payment => $opts{payment},
         ok     => { 200 => 1 },
     );
 
@@ -242,7 +253,7 @@ sub list_blobs {
 
 sub delete_blob {
     my $self = shift;
-    my ($sha256) = @_;
+    my ($sha256, %opts) = @_;
     _validate_sha256($sha256);
 
     return $self->_request(
@@ -250,6 +261,7 @@ sub delete_blob {
         path   => "/$sha256",
         action => 'delete',
         sha256 => $sha256,
+        payment => $opts{payment},
         ok     => { 200 => 1, 204 => 1 },
     );
 }
@@ -289,6 +301,13 @@ sub _request {
     my $url = $self->server . $args{path};
     my %headers = %{ $args{headers} || {} };
 
+    if (defined $args{payment}) {
+        croak "payment proof headers are not allowed on HEAD requests"
+            if $method eq 'HEAD';
+        my %payment_headers = _payment_headers($args{payment});
+        @headers{keys %payment_headers} = values %payment_headers;
+    }
+
     if (my $authorization = $self->_authorization_header(%args, url => $url)) {
         $headers{Authorization} = $authorization;
     }
@@ -308,6 +327,19 @@ sub _request {
 
     my $ok = $args{ok} || {};
     return $response if $ok->{$response->status};
+
+    if ($response->status == 402) {
+        die Net::Blossom::PaymentRequired->new(
+            method             => $method,
+            url                => $url,
+            status             => $response->status,
+            reason             => $response->reason,
+            x_reason           => $response->header('x-reason'),
+            headers            => $response->headers,
+            body               => $response->content,
+            payment_challenges => _payment_challenges($response->headers),
+        );
+    }
 
     die Net::Blossom::Error->new(
         method   => $method,
@@ -354,6 +386,70 @@ sub _server_values {
         unless ref($servers) eq 'ARRAY';
 
     return Net::Blossom::ServerList->new(servers => $servers)->servers;
+}
+
+sub _payment_headers {
+    my ($payment) = @_;
+    croak "payment must be a hash reference" unless ref($payment) eq 'HASH';
+
+    my %headers;
+    for my $method (sort keys %$payment) {
+        my $normalized = _normalize_payment_method($method);
+        my $proof = $payment->{$method};
+        croak "payment proof for $normalized is required"
+            unless defined $proof && length $proof;
+        croak "payment proof for $normalized must be a scalar" if ref($proof);
+        $headers{_payment_header_name($normalized)} = $proof;
+    }
+
+    croak "payment requires at least one proof" unless %headers;
+    return %headers;
+}
+
+sub _payment_challenges {
+    my ($headers) = @_;
+    my %challenges;
+
+    for my $header (sort keys %{$headers || {}}) {
+        next unless $header =~ /\AX-/i;
+        my $method = _payment_challenge_method($header);
+        next unless defined $method;
+        my $payload = $headers->{$header};
+        next if ref($payload);
+        next unless defined $payload && length $payload;
+        $challenges{$method} = $payload;
+    }
+
+    return \%challenges;
+}
+
+sub _payment_challenge_method {
+    my ($method) = @_;
+    return undef unless defined $method && length $method;
+    $method =~ s/\AX-//i;
+    return undef unless $method =~ /\A[A-Za-z0-9][A-Za-z0-9-]*\z/;
+
+    my $normalized = lc $method;
+    return undef if $RESERVED_PAYMENT_METHOD{$normalized};
+    return $normalized;
+}
+
+sub _normalize_payment_method {
+    my ($method) = @_;
+    croak "payment method is required" unless defined $method && length $method;
+    $method =~ s/\AX-//i;
+    croak "payment method must be an X- header token"
+        unless $method =~ /\A[A-Za-z0-9][A-Za-z0-9-]*\z/;
+
+    my $normalized = lc $method;
+    croak "payment method $normalized is reserved"
+        if $RESERVED_PAYMENT_METHOD{$normalized};
+    return $normalized;
+}
+
+sub _payment_header_name {
+    my ($method) = @_;
+    return 'X-' . join '-', map { ucfirst lc $_ } split /-/, $method;
 }
 
 sub _blob_path {

@@ -24,8 +24,27 @@ This repository is in early implementation. `Net-Blossom` currently provides
 blob descriptors, response and error objects, a small HTTP client, and BUD-11
 authorization token creation, BUD-10 Blossom URI parsing/building, and BUD-03
 user server list handling, BUD-04 mirror requests, BUD-05 media processing
-client requests, BUD-06 upload preflight requests, BUD-08 NIP-94 metadata
-tags, and BUD-09 blob report requests. Server behavior is still scaffold-only.
+client requests, BUD-06 upload preflight requests, BUD-07 payment challenge
+handling, BUD-08 NIP-94 metadata tags, and BUD-09 blob report requests. Server
+behavior is still scaffold-only.
+
+## Payment handling
+
+BUD-07 `402 Payment Required` responses croak as
+`Net::Blossom::PaymentRequired`, which is also a `Net::Blossom::Error`. The
+error exposes payment challenges with `payment_methods` and
+`payment_challenge($method)`.
+
+Client calls that may be retried with proof accept a `payment` hash reference
+whose keys are payment methods such as `cashu`, `lightning`, or future `X-*`
+method names. The client sends those proofs as `X-Cashu`, `X-Lightning`, or the
+matching future `X-*` header. `HEAD` requests reject payment proof headers; use
+the preflight challenge to complete payment and then retry the corresponding
+`GET` or `PUT`.
+
+`Net::Blossom` does not complete Cashu or Lightning payments itself. Application
+code can use `Net::Nostr::Core` or another wallet/payment service to satisfy the
+challenge and then pass the proof back to the Blossom client.
 
 ## License
 

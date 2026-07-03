@@ -561,6 +561,37 @@ subtest 'passes media auth context to callback' => sub {
     is($opts->{headers}{Authorization}, 'Nostr media-token', 'callback authorization header');
 };
 
+subtest 'payment proof headers coexist with authorization headers' => sub {
+    my @seen;
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'content-type' => 'application/octet-stream' },
+        content => 'paid blob',
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => sub {
+            push @seen, { @_ };
+            return 'Nostr get-token';
+        },
+    );
+
+    my $response = $client->get_blob($HASH, payment => { cashu => 'cashuBo2F0gqJhaUgA' });
+    is($response->content, 'paid blob', 'paid response returned');
+
+    is(scalar @seen, 1, 'auth callback called once');
+    is($seen[0]{action}, 'get', 'auth action context preserved');
+    is($seen[0]{sha256}, $HASH, 'auth hash context preserved');
+
+    my ($method, $url, $opts) = @{($ua->requests)[0]};
+    is($method, 'GET', 'GET method');
+    is($url, "https://cdn.example.com/$HASH", 'GET URL');
+    is($opts->{headers}{Authorization}, 'Nostr get-token', 'authorization header');
+    is($opts->{headers}{'X-Cashu'}, 'cashuBo2F0gqJhaUgA', 'payment proof header');
+};
+
 subtest 'HTTP errors croak as Net::Blossom::Error with X-Reason' => sub {
     my $ua = Local::UA->new({
         status  => 403,
