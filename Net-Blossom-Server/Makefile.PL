@@ -1,19 +1,41 @@
-use strict;
-use warnings;
+use strictures 2;
 
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME             => 'Net::Blossom::Server',
+    DISTNAME         => 'Net-Blossom-Server',
     VERSION_FROM     => 'lib/Net/Blossom/Server.pm',
     ABSTRACT         => 'Server support for the Blossom protocol',
     AUTHOR           => 'Net::Blossom contributors',
-    LICENSE          => 'perl_5',
-    MIN_PERL_VERSION => '5.020',
+    LICENSE          => 'gpl_3',
+    MIN_PERL_VERSION => '5.016',
+    CONFIGURE_REQUIRES => {
+        'ExtUtils::MakeMaker' => '6.64',
+        'strictures'          => '2',
+    },
     PREREQ_PM        => {
         'Net::Blossom' => '0.001',
+        'strictures'   => '2',
     },
     TEST_REQUIRES    => {
         'Test::More' => '0.98',
+    },
+    test             => {
+        TESTS => 't/*.t',
+    },
+    META_MERGE       => {
+        'meta-spec' => { version => 2 },
+        resources   => {
+            bugtracker => {
+                web => 'https://github.com/NicholasBHubbard/Net-Blossom/issues',
+            },
+            homepage => 'https://github.com/NicholasBHubbard/Net-Blossom',
+            repository => {
+                type => 'git',
+                url  => 'https://github.com/NicholasBHubbard/Net-Blossom.git',
+                web  => 'https://github.com/NicholasBHubbard/Net-Blossom',
+            },
+        },
     },
 );

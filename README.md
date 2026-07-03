@@ -20,8 +20,14 @@ for storage, authorization, rate limits, observability, and operational policy.
 
 ## Status
 
-This repository is in initial setup. The modules load, but protocol behavior is
-not implemented yet.
+This repository is in early implementation. `Net-Blossom` currently provides
+blob descriptors, response and error objects, a small HTTP client, and BUD-11
+authorization token creation. Server behavior is still scaffold-only.
+
+## License
+
+This repository is licensed under the GNU General Public License version 3. See
+`LICENSE`.
 
 ## Development environment
 
@@ -47,7 +53,13 @@ mkdir -p .cpanm/work
 Run tests from the repository root:
 
 ```sh
-/home/_73/.local/bin/plx prove Net-Blossom/t Net-Blossom-Server/t
+/home/_73/.local/bin/plx prove Net-Blossom/t Net-Blossom/t/bud Net-Blossom-Server/t
+```
+
+Run author tests from the repository root:
+
+```sh
+/home/_73/.local/bin/plx AUTHOR_TESTING=1 prove Net-Blossom/xt Net-Blossom-Server/xt
 ```
 
 Inspect the active Perl layout:

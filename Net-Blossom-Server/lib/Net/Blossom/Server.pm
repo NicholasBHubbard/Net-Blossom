@@ -1,7 +1,6 @@
 package Net::Blossom::Server;
 
-use strict;
-use warnings;
+use strictures 2;
 
 use Net::Blossom ();
 
