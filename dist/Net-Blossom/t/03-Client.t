@@ -36,6 +36,8 @@ sub dies(&) {
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 my $PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
+my $EVENT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+my $SIG = 'b' x 128;
 my $JSON = JSON::PP->new->utf8->canonical;
 
 sub descriptor_hash {
@@ -55,6 +57,22 @@ sub nip94_tags {
         ['x', $HASH],
         ['size', '184292'],
     ];
+}
+
+sub report_event {
+    return {
+        id         => $EVENT,
+        pubkey     => $PUBKEY,
+        created_at => 1725909682,
+        kind       => 1984,
+        tags       => [
+            ['x', $HASH, 'malware'],
+            ['e', $EVENT],
+            ['p', $PUBKEY],
+        ],
+        content => 'This blob should be reviewed.',
+        sig     => $SIG,
+    };
 }
 
 subtest 'constructor trims trailing server slash' => sub {
@@ -325,6 +343,29 @@ subtest 'DELETE /<sha256> accepts 204 response' => sub {
     my ($method, $url) = @$request;
     is($method, 'DELETE', 'DELETE method');
     is($url, "https://cdn.example.com/$HASH", 'delete URL');
+};
+
+subtest 'PUT /report sends report event JSON' => sub {
+    my $event = report_event();
+    my $ua = Local::UA->new({
+        status  => 202,
+        reason  => 'Accepted',
+        headers => {},
+        content => '',
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $response = $client->report_blob($event);
+    is($response->status, 202, 'status');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    my $body = $JSON->encode($event);
+    is($method, 'PUT', 'PUT method');
+    is($url, 'https://cdn.example.com/report', 'report URL');
+    is($opts->{content}, $body, 'report event body');
+    is($opts->{headers}{'Content-Type'}, 'application/json', 'JSON content type');
+    is($opts->{headers}{'Content-Length'}, length($body), 'content length header');
 };
 
 subtest 'PUT upload can target the first explicit server list entry' => sub {

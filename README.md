@@ -24,8 +24,8 @@ This repository is in early implementation. `Net-Blossom` currently provides
 blob descriptors, response and error objects, a small HTTP client, and BUD-11
 authorization token creation, BUD-10 Blossom URI parsing/building, and BUD-03
 user server list handling, BUD-04 mirror requests, BUD-05 media processing
-client requests, BUD-06 upload preflight requests, and BUD-08 NIP-94 metadata
-tags. Server behavior is still scaffold-only.
+client requests, BUD-06 upload preflight requests, BUD-08 NIP-94 metadata
+tags, and BUD-09 blob report requests. Server behavior is still scaffold-only.
 
 ## License
 

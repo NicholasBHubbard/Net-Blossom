@@ -15,6 +15,7 @@ use HTTP::Tiny;
 use JSON::PP ();
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
+my $HEX128 = qr/\A[0-9a-f]{128}\z/;
 my $JSON = JSON::PP->new->utf8;
 my $CANONICAL_JSON = JSON::PP->new->utf8->canonical;
 
@@ -192,6 +193,27 @@ sub mirror_blob {
     return Net::Blossom::BlobDescriptor->from_hash(_decode_json_hash($response->content));
 }
 
+sub report_blob {
+    my $self = shift;
+    my ($event) = @_;
+    _validate_report_event($event);
+
+    my $content = $CANONICAL_JSON->encode($event);
+    my %headers = (
+        'Content-Type'   => 'application/json',
+        'Content-Length' => length($content),
+    );
+
+    return $self->_request(
+        method  => 'PUT',
+        path    => '/report',
+        headers => \%headers,
+        content => $content,
+        action  => 'report',
+        ok      => { map { $_ => 1 } 200 .. 299 },
+    );
+}
+
 sub list_blobs {
     my $self = shift;
     my ($pubkey, %opts) = @_;
@@ -346,6 +368,48 @@ sub _validate_sha256 {
     my ($sha256) = @_;
     croak "sha256 must be 64-char lowercase hex"
         unless defined $sha256 && $sha256 =~ $HEX64;
+}
+
+sub _validate_report_event {
+    my ($event) = @_;
+    croak "report event must be a hash reference" unless ref($event) eq 'HASH';
+
+    _validate_report_hex_field($event, 'id', $HEX64, '64-char lowercase hex');
+    _validate_report_hex_field($event, 'pubkey', $HEX64, '64-char lowercase hex');
+    _validate_report_hex_field($event, 'sig', $HEX128, '128-char lowercase hex');
+
+    croak "report event created_at must be a non-negative integer"
+        unless defined $event->{created_at} && !ref($event->{created_at})
+            && $event->{created_at} =~ /\A\d+\z/;
+    croak "report event kind must be 1984"
+        unless defined $event->{kind} && !ref($event->{kind})
+            && $event->{kind} =~ /\A1984\z/;
+    croak "report event content must be a scalar"
+        unless defined $event->{content} && !ref($event->{content});
+    croak "report event tags must be an array reference"
+        unless ref($event->{tags}) eq 'ARRAY';
+
+    my $has_x;
+    for my $tag (@{$event->{tags}}) {
+        croak "report event tags must be array references" unless ref($tag) eq 'ARRAY';
+        croak "report event tag values must be defined" if grep { !defined $_ } @$tag;
+        croak "report event tag values must be scalars" if grep { ref($_) } @$tag;
+
+        next unless @$tag && $tag->[0] eq 'x';
+        croak "report x tags must contain a sha256 hash" unless @$tag >= 2;
+        croak "report x tag hash must be 64-char lowercase hex"
+            unless $tag->[1] =~ $HEX64;
+        $has_x = 1;
+    }
+
+    croak "report event must contain at least one x tag" unless $has_x;
+}
+
+sub _validate_report_hex_field {
+    my ($event, $field, $regex, $description) = @_;
+    croak "report event $field must be $description"
+        unless defined $event->{$field} && !ref($event->{$field})
+            && $event->{$field} =~ $regex;
 }
 
 sub _decode_json_hash {
