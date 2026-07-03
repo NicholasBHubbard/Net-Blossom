@@ -11,10 +11,15 @@ my $minimum_perl = '5.016';
 my $root = _repo_root();
 
 for my $file (
-    "$root/dist/Net-Blossom/Makefile.PL",
     "$root/dist/Net-Blossom/cpanfile",
-    "$root/dist/Net-Blossom-Server/Makefile.PL",
     "$root/dist/Net-Blossom-Server/cpanfile",
+) {
+    ok(!-e $file, "$file does not exist; Makefile.PL is the dependency source of truth");
+}
+
+for my $file (
+    "$root/dist/Net-Blossom/Makefile.PL",
+    "$root/dist/Net-Blossom-Server/Makefile.PL",
 ) {
     for my $module (_dependency_modules($file)) {
         next if $module eq 'perl';
@@ -56,7 +61,7 @@ sub _dependency_modules {
         }
 
         push @modules, $1
-            if $line =~ /^\s*requires\s+'([^']+)'/;
+            if $line =~ /^\s*'([A-Za-z0-9_:]+)'\s*=>/;
     }
 
     return @modules;

@@ -23,6 +23,13 @@ WriteMakefile(
     },
     META_MERGE       => {
         'meta-spec' => { version => 2 },
+        prereqs     => {
+            develop => {
+                requires => {
+                    'Test::Pod' => '1.52',
+                },
+            },
+        },
         resources   => {
             bugtracker => {
                 web => 'https://github.com/NicholasBHubbard/Net-Blossom/issues',
