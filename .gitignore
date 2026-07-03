@@ -1,0 +1,17 @@
+/local/
+/devel/
+/.cpanm/
+/.plx/
+/blossom/
+
+/Net-Blossom/Makefile
+/Net-Blossom/MYMETA.json
+/Net-Blossom/MYMETA.yml
+/Net-Blossom/blib/
+/Net-Blossom/pm_to_blib
+
+/Net-Blossom-Server/Makefile
+/Net-Blossom-Server/MYMETA.json
+/Net-Blossom-Server/MYMETA.yml
+/Net-Blossom-Server/blib/
+/Net-Blossom-Server/pm_to_blib
