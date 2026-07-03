@@ -12,6 +12,15 @@ sub dies(&) {
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 
+sub nip94_tags {
+    return [
+        ['url', "https://cdn.example.com/$HASH.pdf"],
+        ['m', 'application/pdf'],
+        ['x', $HASH],
+        ['size', '184292'],
+    ];
+}
+
 subtest 'BUD-02 blob descriptor example parses' => sub {
     my $descriptor = Net::Blossom::BlobDescriptor->from_hash({
         url      => "https://cdn.example.com/$HASH.pdf",
@@ -46,6 +55,22 @@ subtest 'extra descriptor fields are preserved' => sub {
     my $hash = $descriptor->to_hash;
     is($hash->{ipfs}, 'bafyexample', 'to_hash preserves extra field');
     is($hash->{magnet}, 'magnet:?xt=urn:btih:abc', 'to_hash preserves second extra field');
+};
+
+subtest 'nip94 descriptor field is exposed and preserved' => sub {
+    my $descriptor = Net::Blossom::BlobDescriptor->from_hash({
+        url      => "https://cdn.example.com/$HASH.pdf",
+        sha256   => $HASH,
+        size     => 184292,
+        type     => 'application/pdf',
+        uploaded => 1725105921,
+        nip94    => nip94_tags(),
+    });
+
+    is_deeply($descriptor->nip94, nip94_tags(), 'nip94 accessor');
+    is_deeply($descriptor->get('nip94'), nip94_tags(), 'generic accessor');
+    is_deeply($descriptor->to_hash->{nip94}, nip94_tags(), 'to_hash preserves nip94');
+    ok(!exists $descriptor->extra->{nip94}, 'nip94 is not stored as an extra field');
 };
 
 subtest 'required fields are validated' => sub {
@@ -84,6 +109,14 @@ subtest 'field formats are validated' => sub {
             size => 1, type => 'application/pdf', uploaded => 'abc',
         });
     }, qr/uploaded.*non-negative integer/, 'bad uploaded rejected');
+
+    like(dies {
+        Net::Blossom::BlobDescriptor->from_hash({
+            url => "https://cdn.example.com/$HASH.pdf", sha256 => $HASH,
+            size => 1, type => 'application/pdf', uploaded => 1,
+            nip94 => {},
+        });
+    }, qr/nip94 must be an array reference/, 'bad nip94 rejected');
 };
 
 done_testing;

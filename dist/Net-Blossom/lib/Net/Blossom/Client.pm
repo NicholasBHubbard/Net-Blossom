@@ -89,6 +89,28 @@ sub upload_blob {
     return Net::Blossom::BlobDescriptor->from_hash(_decode_json_hash($response->content));
 }
 
+sub head_upload {
+    my $self = shift;
+    my ($content, %opts) = @_;
+    croak "content is required" unless defined $content;
+
+    my $sha256 = sha256_hex($content);
+    my %headers = (
+        'X-SHA-256'        => $sha256,
+        'X-Content-Type'   => $opts{type} || 'application/octet-stream',
+        'X-Content-Length' => length($content),
+    );
+
+    return $self->_request(
+        method  => 'HEAD',
+        path    => '/upload',
+        headers => \%headers,
+        action  => 'upload',
+        sha256  => $sha256,
+        ok      => { 200 => 1 },
+    );
+}
+
 sub process_media {
     my $self = shift;
     my ($content, %opts) = @_;

@@ -48,6 +48,15 @@ sub descriptor_hash {
     };
 }
 
+sub nip94_tags {
+    return [
+        ['url', "https://cdn.example.com/$HASH.pdf"],
+        ['m', 'application/pdf'],
+        ['x', $HASH],
+        ['size', '184292'],
+    ];
+}
+
 subtest 'constructor trims trailing server slash' => sub {
     my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com///');
     is($client->server, 'https://cdn.example.com', 'server normalized');
@@ -138,6 +147,30 @@ subtest 'PUT /upload preserves binary and empty blob bytes' => sub {
     }
 };
 
+subtest 'HEAD /upload sends preflight headers and returns response' => sub {
+    my $body = 'upload bytes';
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'x-reason' => 'accepted' },
+        content => '',
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $response = $client->head_upload($body, type => 'application/pdf');
+    is($response->status, 200, 'status');
+    is($response->header('x-reason'), 'accepted', 'diagnostic header');
+
+    my $request = ($ua->requests)[0];
+    my ($method, $url, $opts) = @$request;
+    is($method, 'HEAD', 'HEAD method');
+    is($url, 'https://cdn.example.com/upload', 'upload URL');
+    ok(!exists $opts->{content}, 'no request body');
+    is($opts->{headers}{'X-SHA-256'}, sha256_hex($body), 'sha preflight header');
+    is($opts->{headers}{'X-Content-Type'}, 'application/pdf', 'content type preflight header');
+    is($opts->{headers}{'X-Content-Length'}, length($body), 'content length preflight header');
+};
+
 subtest 'PUT /media sends media headers and parses descriptor' => sub {
     my $body = pack('C*', 0, 255, 73, 77, 71);
     my $ua = Local::UA->new({
@@ -219,6 +252,32 @@ subtest 'PUT /mirror accepts existing blob response' => sub {
 
     my $descriptor = $client->mirror_blob("https://cdn.satellite.earth/$HASH.pdf");
     is($descriptor->sha256, $HASH, 'descriptor parsed from 200 response');
+};
+
+subtest 'PUT upload and mirror descriptors expose nip94 metadata' => sub {
+    my %descriptor = %{ descriptor_hash() };
+    $descriptor{nip94} = nip94_tags();
+    my $ua = Local::UA->new(
+        {
+            status  => 201,
+            reason  => 'Created',
+            headers => { 'content-type' => 'application/json' },
+            content => $JSON->encode(\%descriptor),
+        },
+        {
+            status  => 201,
+            reason  => 'Created',
+            headers => { 'content-type' => 'application/json' },
+            content => $JSON->encode(\%descriptor),
+        },
+    );
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $uploaded = $client->upload_blob('pdf bytes', type => 'application/pdf');
+    my $mirrored = $client->mirror_blob("https://cdn.satellite.earth/$HASH.pdf");
+
+    is_deeply($uploaded->nip94, nip94_tags(), 'upload descriptor nip94 tags');
+    is_deeply($mirrored->nip94, nip94_tags(), 'mirror descriptor nip94 tags');
 };
 
 subtest 'PUT /mirror validates local URL argument' => sub {
