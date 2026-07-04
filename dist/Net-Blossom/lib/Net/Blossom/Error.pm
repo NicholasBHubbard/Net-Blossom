@@ -17,6 +17,11 @@ sub new {
 
     $args{headers} = {} unless defined $args{headers};
     $args{body} = '' unless defined $args{body};
+    _validate_required_scalar(\%args, $_) for qw(method url status reason);
+    _validate_status($args{status});
+    croak "headers must be a hash reference" unless ref($args{headers}) eq 'HASH';
+    croak "body must be a scalar" if ref($args{body});
+    croak "x_reason must be a scalar" if defined $args{x_reason} && ref($args{x_reason});
     return bless \%args, $class;
 }
 
@@ -27,6 +32,19 @@ sub as_string {
     $message .= ' at ' . $self->method . ' ' . $self->url
         if defined $self->method && defined $self->url;
     return $message;
+}
+
+sub _validate_required_scalar {
+    my ($args, $field) = @_;
+    croak "$field is required" unless exists $args->{$field} && defined $args->{$field};
+    croak "$field must be a scalar" if ref($args->{$field});
+    croak "$field is required" if $field =~ /\A(?:method|url)\z/ && !length $args->{$field};
+}
+
+sub _validate_status {
+    my ($status) = @_;
+    croak "status must be an HTTP status code"
+        unless $status =~ /\A[1-5][0-9][0-9]\z/;
 }
 
 1;

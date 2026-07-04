@@ -25,6 +25,7 @@ WriteMakefile(
         prereqs     => {
             develop => {
                 requires => {
+                    'Pod::Coverage' => '0.23',
                     'Test::Pod' => '1.52',
                 },
             },

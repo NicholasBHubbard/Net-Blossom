@@ -65,7 +65,7 @@ subtest 'BUD-03 user server list preserves trusted server order' => sub {
     });
 
     is_deeply(
-        [$list->servers],
+        $list->servers,
         ['https://cdn.self.hosted', 'https://cdn.satellite.earth'],
         'server order preserved',
     );

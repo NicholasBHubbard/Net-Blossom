@@ -28,6 +28,21 @@ client requests, BUD-06 upload preflight requests, BUD-07 payment challenge
 handling, BUD-08 NIP-94 metadata tags, and BUD-09 blob report requests. Server
 behavior is still scaffold-only.
 
+## API contracts
+
+`Net::Blossom::Client->list_blobs`, `Net::Blossom::ServerList->servers`, and
+`Net::Blossom::ServerList->blob_urls_for` return array references.
+
+`Net::Blossom::Client` accepts `auth` as a static `Authorization` header string,
+a code reference, or an object with `authorization_header(%context)`. Code
+references and objects receive `method`, `url`, `action`, and `sha256` context.
+`Net::Blossom::AuthToken` objects can be passed directly when a prebuilt BUD-11
+token is appropriate.
+
+HTTP result objects require `method`, `url`, `status`, and `reason` at
+construction time. `Net::Blossom::PaymentRequired` is a `Net::Blossom::Error`
+with payment challenge accessors.
+
 ## Payment handling
 
 BUD-07 `402 Payment Required` responses croak as

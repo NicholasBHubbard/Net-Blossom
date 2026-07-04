@@ -13,6 +13,15 @@ sub dies(&) {
 }
 
 {
+    package Local::PubkeyOnly;
+    use strictures 2;
+
+    sub pubkey_hex {
+        return '7' x 64;
+    }
+}
+
+{
     package Local::Key;
     use strictures 2;
 
@@ -122,6 +131,10 @@ subtest 'encodes Authorization header as Nostr base64url without padding' => sub
 subtest 'validates BUD-11 token inputs' => sub {
     my $key = Local::Key->new($PUBKEY);
 
+    like(dies { Net::Blossom::AuthToken->new(key => 'not-a-key', action => 'get', content => 'x', expiration => $FUTURE) },
+        qr/key must provide pubkey_hex and sign_event/, 'scalar key rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => bless({}, 'Local::PubkeyOnly'), action => 'get', content => 'x', expiration => $FUTURE) },
+        qr/key must provide pubkey_hex and sign_event/, 'partial key object rejected');
     like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'bogus', content => 'x', expiration => $FUTURE) },
         qr/action/, 'unknown action rejected');
     like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => $PAST, hashes => [$HASH]) },

@@ -34,8 +34,9 @@ sub descriptor {
 subtest 'BUD-12 GET /list/<pubkey> supports cursor pagination params' => sub {
     my $ua = Local::UA->new({ status => 200, reason => 'OK', headers => {}, content => $JSON->encode([descriptor()]) });
     my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
-    my @blobs = $client->list_blobs($PUBKEY, cursor => $HASH, limit => 10);
-    is(scalar @blobs, 1, 'one descriptor');
+    my $blobs = $client->list_blobs($PUBKEY, cursor => $HASH, limit => 10);
+    is(ref($blobs), 'ARRAY', 'arrayref response');
+    is(scalar @$blobs, 1, 'one descriptor');
     my $request = ($ua->requests)[0];
     my ($method, $url) = @$request;
     is($method, 'GET', 'GET');

@@ -4,6 +4,7 @@ use Test::More;
 use Digest::SHA qw(sha256_hex);
 use JSON ();
 
+use Net::Blossom::AuthToken;
 use Net::Blossom::Client;
 use Net::Blossom::Error;
 
@@ -11,6 +12,54 @@ sub dies(&) {
     my ($code) = @_;
     my $ok = eval { $code->(); 1 };
     return $ok ? undef : $@;
+}
+
+{
+    package Local::Key;
+    use strictures 2;
+
+    sub new {
+        my ($class, $pubkey) = @_;
+        return bless { pubkey => $pubkey, signed => 0 }, $class;
+    }
+
+    sub pubkey_hex {
+        my ($self) = @_;
+        return $self->{pubkey};
+    }
+
+    sub sign_event {
+        my ($self, $event) = @_;
+        $self->{signed}++;
+        $event->sig('b' x 128);
+        return $event->sig;
+    }
+
+    sub signed {
+        my ($self) = @_;
+        return $self->{signed};
+    }
+}
+
+{
+    package Local::Authorizer;
+    use strictures 2;
+
+    sub new {
+        my ($class, $header) = @_;
+        return bless { header => $header, seen => [] }, $class;
+    }
+
+    sub authorization_header {
+        my $self = shift;
+        push @{$self->{seen}}, { @_ };
+        return $self->{header};
+    }
+
+    sub seen {
+        my ($self) = @_;
+        return @{$self->{seen}};
+    }
 }
 
 {
@@ -317,9 +366,10 @@ subtest 'GET /list/<pubkey> parses descriptors and query params' => sub {
     });
     my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
 
-    my @blobs = $client->list_blobs($PUBKEY, cursor => $HASH, limit => 25);
-    is(scalar @blobs, 1, 'one descriptor');
-    isa_ok($blobs[0], 'Net::Blossom::BlobDescriptor');
+    my $blobs = $client->list_blobs($PUBKEY, cursor => $HASH, limit => 25);
+    is(ref($blobs), 'ARRAY', 'list_blobs returns array reference');
+    is(scalar @$blobs, 1, 'one descriptor');
+    isa_ok($blobs->[0], 'Net::Blossom::BlobDescriptor');
 
     my $request = ($ua->requests)[0];
     my ($method, $url) = @$request;
@@ -497,6 +547,74 @@ subtest 'passes request context to auth callback' => sub {
     my $request = ($ua->requests)[0];
     my ($method, $url, $opts) = @$request;
     is($opts->{headers}{Authorization}, 'Nostr callback-token', 'callback authorization header');
+};
+
+subtest 'accepts AuthToken object for Authorization header' => sub {
+    my $key = Local::Key->new($PUBKEY);
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => {},
+        content => 'blob',
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => Net::Blossom::AuthToken->new(
+            key        => $key,
+            action     => 'get',
+            content    => 'Get Blob',
+            expiration => time + 3600,
+            hashes     => [$HASH],
+            created_at => 1708850000,
+        ),
+    );
+
+    $client->get_blob($HASH);
+
+    my ($method, $url, $opts) = @{($ua->requests)[0]};
+    like($opts->{headers}{Authorization}, qr/\ANostr [A-Za-z0-9_-]+\z/,
+        'authorization header from AuthToken object');
+    is($key->signed, 1, 'AuthToken object signed once');
+};
+
+subtest 'passes request context to auth object' => sub {
+    my $authorizer = Local::Authorizer->new('Nostr object-token');
+    my $ua = Local::UA->new({
+        status  => 200,
+        reason  => 'OK',
+        headers => {},
+        content => 'blob',
+    });
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => $ua,
+        auth   => $authorizer,
+    );
+
+    $client->get_blob($HASH);
+
+    my @seen = $authorizer->seen;
+    is(scalar @seen, 1, 'auth object called once');
+    is($seen[0]{method}, 'GET', 'method context');
+    is($seen[0]{url}, "https://cdn.example.com/$HASH", 'url context');
+    is($seen[0]{action}, 'get', 'action context');
+    is($seen[0]{sha256}, $HASH, 'sha256 context');
+
+    my ($method, $url, $opts) = @{($ua->requests)[0]};
+    is($opts->{headers}{Authorization}, 'Nostr object-token', 'object authorization header');
+};
+
+subtest 'rejects unusable auth object' => sub {
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        ua     => Local::UA->new,
+        auth   => bless({}, 'Local::NotAuthorizer'),
+    );
+
+    like(dies { $client->get_blob($HASH) },
+        qr/auth must be a string, code reference, or object with authorization_header/,
+        'object without authorization_header rejected clearly');
 };
 
 subtest 'passes upload auth context to mirror callback' => sub {

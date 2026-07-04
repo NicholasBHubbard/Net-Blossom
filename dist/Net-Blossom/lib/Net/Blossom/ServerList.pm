@@ -55,17 +55,17 @@ sub from_event {
 
 sub servers {
     my ($self) = @_;
-    return @{$self->_servers};
+    return [@{$self->_servers}];
 }
 
 sub primary_server {
     my ($self) = @_;
-    return ($self->servers)[0];
+    return $self->_servers->[0];
 }
 
 sub to_tags {
     my ($self) = @_;
-    return [map { ['server', $_] } $self->servers];
+    return [map { ['server', $_] } @{$self->_servers}];
 }
 
 sub to_event {
@@ -105,16 +105,16 @@ sub extract_blob_reference {
 sub blob_urls_for {
     my ($self, $url) = @_;
     my ($sha256, $extension) = $self->extract_blob_reference($url);
-    return unless defined $sha256;
+    return [] unless defined $sha256;
 
     my $path = $sha256;
     $path .= ".$extension" if defined $extension;
 
-    return map {
+    return [map {
         my $server = $_;
         $server =~ s{/+\z}{};
         "$server/$path";
-    } $self->servers;
+    } @{$self->_servers}];
 }
 
 sub _event_field {

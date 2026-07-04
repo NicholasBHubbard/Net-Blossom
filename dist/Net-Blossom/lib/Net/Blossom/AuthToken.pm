@@ -9,6 +9,7 @@ use Class::Tiny qw(key action content expiration server servers hashes created_a
 use JSON ();
 use MIME::Base64 qw(encode_base64);
 use Net::Nostr::Event;
+use Scalar::Util qw(blessed);
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my %ACTION = map { $_ => 1 } qw(get upload list delete media);
@@ -22,6 +23,8 @@ sub new {
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
 
     croak "key is required" unless defined $args{key};
+    croak "key must provide pubkey_hex and sign_event"
+        unless blessed($args{key}) && $args{key}->can('pubkey_hex') && $args{key}->can('sign_event');
     croak "action is required" unless defined $args{action};
     croak "action must be one of get, upload, list, delete, media"
         unless $ACTION{$args{action}};

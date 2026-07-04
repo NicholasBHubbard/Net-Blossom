@@ -33,11 +33,26 @@ subtest 'parses BUD-03 kind 10063 server list event' => sub {
 
     isa_ok($list, 'Net::Blossom::ServerList');
     is_deeply(
-        [$list->servers],
+        $list->servers,
         ['https://cdn.self.hosted', 'https://cdn.satellite.earth'],
         'server tag order is preserved',
     );
     is($list->primary_server, 'https://cdn.self.hosted', 'first server is primary');
+};
+
+subtest 'servers returns a copy array reference in scalar context' => sub {
+    my $list = Net::Blossom::ServerList->new(
+        servers => ['https://cdn.self.hosted', 'https://cdn.satellite.earth'],
+    );
+
+    my $servers = $list->servers;
+    is(ref($servers), 'ARRAY', 'servers returns array reference');
+    is_deeply($servers, ['https://cdn.self.hosted', 'https://cdn.satellite.earth'],
+        'server URLs returned');
+
+    push @$servers, 'https://mutated.example.com';
+    is_deeply($list->servers, ['https://cdn.self.hosted', 'https://cdn.satellite.earth'],
+        'mutating returned arrayref does not mutate object');
 };
 
 subtest 'builds ordered BUD-03 server list event' => sub {
@@ -125,7 +140,7 @@ subtest 'builds fallback URLs for listed servers' => sub {
     );
 
     is_deeply(
-        [$list->blob_urls_for("https://broken.example.com/path/$HASH.pdf?download=1")],
+        $list->blob_urls_for("https://broken.example.com/path/$HASH.pdf?download=1"),
         [
             "https://cdn.self.hosted/$HASH.pdf",
             "https://cdn.satellite.earth/$HASH.pdf",
@@ -133,14 +148,14 @@ subtest 'builds fallback URLs for listed servers' => sub {
         'fallback URLs preserve order and file extension',
     );
     is_deeply(
-        [$list->blob_urls_for("https://broken.example.com/$HASH")],
+        $list->blob_urls_for("https://broken.example.com/$HASH"),
         [
             "https://cdn.self.hosted/$HASH",
             "https://cdn.satellite.earth/$HASH",
         ],
         'fallback URLs work without extension',
     );
-    is_deeply([$list->blob_urls_for('https://broken.example.com/no-hash')],
+    is_deeply($list->blob_urls_for('https://broken.example.com/no-hash'),
         [], 'no hash yields no fallback URLs');
 };
 

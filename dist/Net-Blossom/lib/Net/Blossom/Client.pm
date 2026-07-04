@@ -16,6 +16,7 @@ use HTTP::Tiny;
 use JSON ();
 use MIME::Base64 qw(decode_base64);
 use Net::Nostr::Zap qw(bolt11_amount);
+use Scalar::Util qw(blessed);
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $HEX128 = qr/\A[0-9a-f]{128}\z/;
@@ -253,7 +254,7 @@ sub list_blobs {
 
     my $data = _decode_json($response->content);
     croak "list response must be a JSON array" unless ref($data) eq 'ARRAY';
-    return map { Net::Blossom::BlobDescriptor->from_hash($_) } @$data;
+    return [map { Net::Blossom::BlobDescriptor->from_hash($_) } @$data];
 }
 
 sub delete_blob {
@@ -371,26 +372,32 @@ sub _authorization_header {
     my %args = @_;
     return undef unless defined $self->auth;
     return $self->auth unless ref $self->auth;
-    croak "auth must be a string or code reference" unless ref($self->auth) eq 'CODE';
-    return $self->auth->(
+    my %context = (
         method => $args{method},
         url    => $args{url},
         action => $args{action},
         sha256 => $args{sha256},
     );
+
+    return $self->auth->(%context) if ref($self->auth) eq 'CODE';
+
+    return $self->auth->authorization_header(%context)
+        if blessed($self->auth) && $self->auth->can('authorization_header');
+
+    croak "auth must be a string, code reference, or object with authorization_header";
 }
 
 sub _server_values {
     my ($servers) = @_;
     croak "servers are required" unless defined $servers;
 
-    return $servers->servers
+    return @{$servers->servers}
         if ref($servers) && eval { $servers->isa('Net::Blossom::ServerList') };
 
     croak "servers must be a Net::Blossom::ServerList or array reference"
         unless ref($servers) eq 'ARRAY';
 
-    return Net::Blossom::ServerList->new(servers => $servers)->servers;
+    return @{Net::Blossom::ServerList->new(servers => $servers)->servers};
 }
 
 sub _payment_headers {

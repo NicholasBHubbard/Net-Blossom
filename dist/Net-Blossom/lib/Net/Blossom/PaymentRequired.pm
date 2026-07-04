@@ -22,7 +22,10 @@ sub new {
     croak "payment_challenges must be a hash reference"
         unless ref($args{payment_challenges}) eq 'HASH';
 
-    return bless \%args, $class;
+    my $payment_challenges = delete $args{payment_challenges};
+    my $self = $class->SUPER::new(%args);
+    $self->{payment_challenges} = $payment_challenges;
+    return $self;
 }
 
 sub payment_methods {
