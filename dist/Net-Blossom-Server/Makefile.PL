@@ -14,6 +14,8 @@ WriteMakefile(
         'strictures' => '2',
     },
     PREREQ_PM        => {
+        'Class::Tiny'  => '0',
+        'JSON'         => '0',
         'Net::Blossom' => '0.001',
         'strictures'   => '2',
     },
