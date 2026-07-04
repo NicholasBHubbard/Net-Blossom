@@ -172,6 +172,32 @@ subtest 'handle_request dispatches GET /<sha256>' => sub {
     is($storage->last_get_blob, $SHA256, 'sha256 passed to storage');
 };
 
+subtest 'handle_request dispatches HEAD /<sha256>' => sub {
+    my $descriptor = Net::Blossom::BlobDescriptor->new(
+        url      => "https://cdn.example.com/$SHA256.txt",
+        sha256   => $SHA256,
+        size     => length('dispatch body'),
+        type     => 'text/plain',
+        uploaded => 1725105921,
+    );
+    my $storage = Local::Storage->new(blobs => {
+        $SHA256 => Net::Blossom::Server::BlobResult->new(
+            descriptor => $descriptor,
+            body       => 'dispatch body',
+        ),
+    });
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $response = $server->handle_request(request(method => 'HEAD', path => "/$SHA256.txt"));
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 200, 'head blob status');
+    is($response->header('content-type'), 'text/plain', 'head blob content type');
+    is($response->header('content-length'), length('dispatch body'), 'head blob content length');
+    is($response->body, '', 'head blob body');
+    is($storage->last_get_blob, $SHA256, 'sha256 passed to storage');
+};
+
 subtest 'handle_request dispatches DELETE /<sha256>' => sub {
     my $storage = Local::Storage->new;
     my $server = Net::Blossom::Server->new(storage => $storage);
@@ -208,6 +234,90 @@ subtest 'handle_request dispatches GET /list/<pubkey>' => sub {
     is_deeply($storage->{last_list_blobs}, [$PUBKEY, {}], 'list passed to storage');
 };
 
+subtest 'handle_request dispatches HEAD /upload preflight' => sub {
+    my $server = Net::Blossom::Server->new(storage => Local::Storage->new);
+
+    my $response = $server->handle_request(Net::Blossom::Server::Request->new(
+        method  => 'HEAD',
+        path    => '/upload',
+        headers => {
+            'X-SHA-256'        => $SHA256,
+            'X-Content-Type'   => 'text/plain',
+            'X-Content-Length' => 12,
+        },
+    ));
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 200, 'upload preflight status');
+    is($response->body, '', 'upload preflight body');
+};
+
+subtest 'handle_request dispatches PUT and HEAD /media' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(storage => $storage, clock => sub { 1725105921 });
+    my $body = 'media dispatch';
+    my $sha256 = sha256_hex($body);
+
+    my $response = $server->handle_request(
+        Net::Blossom::Server::Request->new(
+            method         => 'PUT',
+            path           => '/media',
+            body           => $body,
+            content_type   => 'text/plain',
+            content_length => length($body),
+            headers        => { 'X-SHA-256' => $sha256 },
+        ),
+        pubkey => $PUBKEY,
+    );
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 201, 'media upload status');
+    is($JSON->decode($response->body)->{sha256}, $sha256, 'media descriptor response');
+
+    $response = $server->handle_request(Net::Blossom::Server::Request->new(
+        method  => 'HEAD',
+        path    => '/media',
+        headers => {
+            'X-SHA-256'        => $sha256,
+            'X-Content-Type'   => 'text/plain',
+            'X-Content-Length' => length($body),
+        },
+    ));
+    is($response->status, 200, 'media preflight status');
+};
+
+subtest 'handle_request dispatches PUT /mirror' => sub {
+    my $body = 'mirror dispatch';
+    my $sha256 = sha256_hex($body);
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(
+        storage        => $storage,
+        mirror_fetcher => sub {
+            return {
+                body           => $body,
+                type           => 'text/plain',
+                content_length => length($body),
+            };
+        },
+        clock          => sub { 1725105921 },
+    );
+
+    my $response = $server->handle_request(
+        Net::Blossom::Server::Request->new(
+            method         => 'PUT',
+            path           => '/mirror',
+            body           => $JSON->encode({ url => "https://source.example/$sha256.txt" }),
+            content_type   => 'application/json',
+            content_length => length($JSON->encode({ url => "https://source.example/$sha256.txt" })),
+        ),
+        pubkey => $PUBKEY,
+    );
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 201, 'mirror status');
+    is($JSON->decode($response->body)->{sha256}, $sha256, 'mirror descriptor response');
+};
+
 subtest 'handle_request returns 404 for unknown paths' => sub {
     my $server = Net::Blossom::Server->new(storage => Local::Storage->new);
 
@@ -238,7 +348,7 @@ subtest 'handle_request returns 405 for unsupported upload methods' => sub {
 
     isa_ok($response, 'Net::Blossom::Server::Response');
     is($response->status, 405, 'unsupported method status');
-    is($response->header('allow'), 'PUT', 'allow header');
+    is($response->header('allow'), 'HEAD, PUT', 'allow header');
     is($response->body, '', 'unsupported method body');
 };
 
@@ -260,7 +370,7 @@ subtest 'handle_request returns 405 for unsupported blob methods' => sub {
 
     isa_ok($response, 'Net::Blossom::Server::Response');
     is($response->status, 405, 'unsupported method status');
-    is($response->header('allow'), 'DELETE, GET', 'allow header');
+    is($response->header('allow'), 'DELETE, GET, HEAD', 'allow header');
     is($response->body, '', 'unsupported method body');
 };
 

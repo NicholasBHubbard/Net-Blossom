@@ -30,8 +30,10 @@ and delete requests.
 
 `Net-Blossom-Server` currently provides framework-neutral request and response
 objects, a storage contract, server-owned upload hashing, and handlers for
-`PUT /upload`, `GET /<sha256>`, `DELETE /<sha256>`, and
-`GET /list/<pubkey>`.
+`PUT /upload`, `HEAD /upload`, `GET /<sha256>`, `HEAD /<sha256>`,
+`DELETE /<sha256>`, `GET /list/<pubkey>`, `PUT /media`, `HEAD /media`, and
+`PUT /mirror`. It also includes an allowlist-only HTTP mirror fetcher for simple
+SSRF protection.
 
 ## API contracts
 

@@ -145,16 +145,68 @@ subtest 'authorizes implemented Blossom endpoints' => sub {
     )), $key->pubkey_hex, 'upload token uses X-SHA-256 hash');
 
     is($auth->authorize_request(request(
+        method        => 'HEAD',
+        path          => '/upload',
+        x_sha256      => $SHA256,
+        authorization => token_header($key, action => 'upload', hashes => [$SHA256]),
+    )), $key->pubkey_hex, 'upload preflight token uses X-SHA-256 hash');
+
+    is($auth->authorize_request(request(
         method        => 'GET',
         path          => "/$SHA256",
         authorization => token_header($key, action => 'get'),
     )), $key->pubkey_hex, 'get token may omit x tag');
 
     is($auth->authorize_request(request(
+        method        => 'HEAD',
+        path          => "/$SHA256.pdf",
+        authorization => token_header($key, action => 'get', hashes => [$SHA256]),
+    )), $key->pubkey_hex, 'head token uses URL hash without extension');
+
+    is($auth->authorize_request(request(
         method        => 'GET',
         path          => "/list/$LIST_PUBKEY",
         authorization => token_header($key, action => 'list'),
     )), $key->pubkey_hex, 'list token does not require hash scope');
+
+    is($auth->authorize_request(request(
+        method        => 'PUT',
+        path          => '/media',
+        x_sha256      => $SHA256,
+        authorization => token_header($key, action => 'media', hashes => [$SHA256]),
+    )), $key->pubkey_hex, 'media token uses X-SHA-256 hash');
+
+    is($auth->authorize_request(request(
+        method        => 'HEAD',
+        path          => '/media',
+        x_sha256      => $SHA256,
+        authorization => token_header($key, action => 'media', hashes => [$SHA256]),
+    )), $key->pubkey_hex, 'media preflight token uses X-SHA-256 hash');
+};
+
+subtest 'returns rich authorization results for deferred mirror hash checks' => sub {
+    my $key = Net::Nostr::Key->new;
+    my $auth = Net::Blossom::Server::Authorization->new(
+        domains => ['cdn.example.com'],
+        clock   => sub { $NOW },
+    );
+
+    my $result = $auth->authorize(request(
+        method        => 'PUT',
+        path          => '/mirror',
+        authorization => token_header(
+            $key,
+            action  => 'upload',
+            hashes  => [$SHA256, $OTHER_SHA256],
+            servers => ['cdn.example.com'],
+        ),
+    ));
+
+    isa_ok($result, 'Net::Blossom::Server::AuthorizationResult');
+    is($result->pubkey, $key->pubkey_hex, 'result pubkey');
+    is($result->action, 'upload', 'result action');
+    is_deeply($result->hashes, [$SHA256, $OTHER_SHA256], 'result hashes');
+    ok($result->require_hash($OTHER_SHA256, status => 409), 'deferred mirror hash can be checked later');
 };
 
 subtest 'rejects malformed or missing authorization headers' => sub {
@@ -244,6 +296,25 @@ subtest 'enforces BUD-11 hash scopes' => sub {
         path          => "/$SHA256",
         authorization => token_header($key, action => 'get', hashes => [$OTHER_SHA256]),
     )) }, 401, 'optional get x tag still scopes the token');
+
+    is(error_status { $auth->authorize_request(request(
+        method        => 'HEAD',
+        path          => '/media',
+        authorization => signed_header($key, action => 'media'),
+    )) }, 401, 'media preflight without X-SHA-256 rejected');
+
+    is(error_status { $auth->authorize_request(request(
+        method        => 'PUT',
+        path          => '/mirror',
+        authorization => signed_header($key, action => 'upload'),
+    )) }, 401, 'mirror without x tag rejected');
+
+    is(error_status { $auth->authorize_request(request(
+        method        => 'PUT',
+        path          => '/media',
+        x_sha256      => $SHA256,
+        authorization => token_header($key, action => 'upload', hashes => [$SHA256]),
+    )) }, 401, 'media requires media action');
 };
 
 done_testing;

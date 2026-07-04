@@ -93,9 +93,12 @@ sub dies(&) {
 
 sub upload_request {
     my ($body, %args) = @_;
+    my %headers;
+    $headers{'X-SHA-256'} = $args{x_sha256} if defined $args{x_sha256};
     return Net::Blossom::Server::Request->new(
         method         => $args{method} || 'PUT',
         path           => defined $args{path} ? $args{path} : '/upload',
+        headers        => \%headers,
         body           => $body,
         content_type   => $args{content_type},
         content_length => defined $args{content_length} ? $args{content_length} : length($body),
@@ -108,7 +111,7 @@ subtest 'handle_upload returns created JSON response' => sub {
     my $body = "hello blossom\n";
 
     my $response = $server->handle_upload(
-        upload_request($body, content_type => 'text/plain'),
+        upload_request($body, content_type => 'text/plain', x_sha256 => sha256_hex($body)),
         pubkey => $PUBKEY,
     );
 
@@ -124,9 +127,40 @@ subtest 'handle_upload returns created JSON response' => sub {
 
     my ($upload) = $storage->uploads;
     is($upload->{context}{type}, 'text/plain', 'content type passed to storage');
+    is($upload->{context}{expected_sha256}, sha256_hex($body), 'X-SHA-256 passed to storage');
     is($upload->{context}{content_length}, length($body), 'content length passed to storage');
     is($upload->{context}{pubkey}, $PUBKEY, 'pubkey passed to storage');
     is_deeply($upload->{chunks}, [$body], 'body written to storage');
+};
+
+subtest 'handle_upload maps X-SHA-256 mismatch to BUD-02 conflict before commit' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $error = dies {
+        $server->handle_upload(upload_request('body', x_sha256 => '0' x 64));
+    };
+
+    isa_ok($error, 'Net::Blossom::Server::Error');
+    is($error->status, 409, 'sha mismatch status');
+    my ($upload) = $storage->uploads;
+    is($upload->{commit}, undef, 'mismatch does not commit');
+    is($upload->{aborted}, 1, 'mismatch aborts upload');
+};
+
+subtest 'handle_upload maps Content-Length mismatch to BUD-02 bad request before commit' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $error = dies {
+        $server->handle_upload(upload_request('body', content_length => length('body') + 1));
+    };
+
+    isa_ok($error, 'Net::Blossom::Server::Error');
+    is($error->status, 400, 'content length mismatch status');
+    my ($upload) = $storage->uploads;
+    is($upload->{commit}, undef, 'mismatch does not commit');
+    is($upload->{aborted}, 1, 'mismatch aborts upload');
 };
 
 subtest 'handle_upload returns ok for existing blobs' => sub {

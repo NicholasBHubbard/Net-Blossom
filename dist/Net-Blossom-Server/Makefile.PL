@@ -19,6 +19,7 @@ WriteMakefile(
         'Net::Blossom'     => '0.001',
         'Net::Nostr::Core' => '0',
         'strictures'       => '2',
+        'URI'              => '0',
     },
     test             => {
         TESTS => 't/*.t',

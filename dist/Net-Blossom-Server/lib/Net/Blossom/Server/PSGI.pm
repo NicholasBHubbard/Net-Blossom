@@ -47,8 +47,11 @@ sub to_app {
 
         my $response = eval {
             if (defined $self->authorization) {
-                my $pubkey = $self->authorization->authorize_request($request);
-                $opts{pubkey} = $pubkey if defined $pubkey;
+                my $authorization = $self->authorization->authorize($request);
+                if (defined $authorization) {
+                    $opts{pubkey} = $authorization->pubkey;
+                    $opts{authorization} = $authorization;
+                }
             }
             elsif (defined $self->authorize) {
                 my $pubkey = $self->authorize->(
@@ -231,7 +234,7 @@ core as the verified C<pubkey>.
 
 A C<Net::Blossom::Server::Authorization> object. When supplied, the adapter
 validates BUD-11 C<Authorization> headers for implemented Blossom endpoints and
-passes the verified event pubkey to the server core.
+passes the verified event pubkey and authorization result to the server core.
 
 =back
 

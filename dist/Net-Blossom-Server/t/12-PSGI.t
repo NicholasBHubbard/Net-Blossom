@@ -241,6 +241,54 @@ subtest 'PSGI app translates GET blob responses' => sub {
     is($storage->{last_get_blob}, $SHA256, 'sha256 passed to storage');
 };
 
+subtest 'PSGI app translates HEAD blob responses' => sub {
+    my $body = 'hello blob';
+    my $descriptor = Net::Blossom::BlobDescriptor->new(
+        url      => "https://cdn.example.com/$SHA256.txt",
+        sha256   => $SHA256,
+        size     => length($body),
+        type     => 'text/plain',
+        uploaded => 1725105921,
+    );
+    my $storage = Local::Storage->new(blobs => {
+        $SHA256 => Net::Blossom::Server::BlobResult->new(
+            descriptor => $descriptor,
+            body       => $body,
+        ),
+    });
+    my $app = Net::Blossom::Server::PSGI->new(
+        server => Net::Blossom::Server->new(storage => $storage),
+    )->to_app;
+
+    my $response = $app->(env(method => 'HEAD', path => "/$SHA256.txt"));
+
+    is($response->[0], 200, 'head status');
+    my $headers = headers_hash([@{$response->[1]}]);
+    is($headers->{'content-type'}, 'text/plain', 'content type');
+    is($headers->{'content-length'}, length($body), 'content length');
+    is_deeply($response->[2], [''], 'head response body converted to empty PSGI body');
+    is($storage->{last_get_blob}, $SHA256, 'sha256 passed to storage');
+};
+
+subtest 'PSGI app translates HEAD upload preflight responses' => sub {
+    my $app = Net::Blossom::Server::PSGI->new(
+        server => Net::Blossom::Server->new(storage => Local::Storage->new),
+    )->to_app;
+
+    my $response = $app->(env(
+        method => 'HEAD',
+        path   => '/upload',
+        env    => {
+            HTTP_X_SHA_256        => $SHA256,
+            HTTP_X_CONTENT_TYPE   => 'application/pdf',
+            HTTP_X_CONTENT_LENGTH => 184292,
+        },
+    ));
+
+    is($response->[0], 200, 'upload preflight status');
+    is_deeply($response->[2], [''], 'upload preflight body');
+};
+
 subtest 'PSGI app parses query string for list requests' => sub {
     my $descriptor = Net::Blossom::BlobDescriptor->new(
         url      => "https://cdn.example.com/$SHA256",
@@ -314,6 +362,115 @@ subtest 'PSGI app validates BUD-11 authorization' => sub {
     is($response->[0], 201, 'authorized upload status');
     my ($upload) = $storage->uploads;
     is($upload->{context}{pubkey}, $key->pubkey_hex, 'BUD-11 pubkey passed to storage');
+};
+
+subtest 'PSGI app validates BUD-11 media authorization' => sub {
+    my $key = Net::Nostr::Key->new;
+    my $storage = Local::Storage->new;
+    my $app = Net::Blossom::Server::PSGI->new(
+        server        => Net::Blossom::Server->new(storage => $storage, clock => sub { 1725105921 }),
+        authorization => Net::Blossom::Server::Authorization->new(clock => sub { $NOW }),
+    )->to_app;
+    my $body = 'bud-11 psgi media';
+    my $sha256 = sha256_hex($body);
+
+    my $response = $app->(env(
+        method => 'PUT',
+        path   => '/media',
+        body   => $body,
+        env    => {
+            CONTENT_TYPE       => 'image/png',
+            CONTENT_LENGTH     => length($body),
+            HTTP_X_SHA_256     => $sha256,
+            HTTP_AUTHORIZATION => auth_header(
+                $key,
+                action => 'media',
+                hashes => [$sha256],
+            ),
+        },
+    ));
+
+    is($response->[0], 201, 'authorized media status');
+    my ($upload) = $storage->uploads;
+    is($upload->{context}{pubkey}, $key->pubkey_hex, 'BUD-11 media pubkey passed to storage');
+    is($upload->{context}{expected_sha256}, $sha256, 'BUD-11 media hash passed to storage');
+};
+
+subtest 'PSGI app passes BUD-11 mirror authorization result for deferred hash checks' => sub {
+    my $key = Net::Nostr::Key->new;
+    my $body = 'bud-11 psgi mirror';
+    my $sha256 = sha256_hex($body);
+    my $storage = Local::Storage->new;
+    my $app = Net::Blossom::Server::PSGI->new(
+        server        => Net::Blossom::Server->new(
+            storage        => $storage,
+            mirror_fetcher => sub {
+                return {
+                    body           => $body,
+                    type           => 'text/plain',
+                    content_length => length($body),
+                };
+            },
+            clock          => sub { 1725105921 },
+        ),
+        authorization => Net::Blossom::Server::Authorization->new(clock => sub { $NOW }),
+    )->to_app;
+    my $content = $JSON->encode({ url => "https://source.example/$sha256.txt" });
+
+    my $response = $app->(env(
+        method => 'PUT',
+        path   => '/mirror',
+        body   => $content,
+        env    => {
+            CONTENT_TYPE       => 'application/json',
+            CONTENT_LENGTH     => length($content),
+            HTTP_AUTHORIZATION => auth_header(
+                $key,
+                action => 'upload',
+                hashes => [$sha256],
+            ),
+        },
+    ));
+
+    is($response->[0], 201, 'authorized mirror status');
+    my ($upload) = $storage->uploads;
+    is($upload->{context}{pubkey}, $key->pubkey_hex, 'BUD-11 mirror pubkey passed to storage');
+    is_deeply($upload->{context}{allowed_sha256}, [$sha256], 'BUD-11 mirror hashes passed to storage');
+};
+
+subtest 'PSGI app maps BUD-11 mirror hash conflicts to 409 responses' => sub {
+    my $key = Net::Nostr::Key->new;
+    my $body = 'bud-11 psgi mirror mismatch';
+    my $storage = Local::Storage->new;
+    my $app = Net::Blossom::Server::PSGI->new(
+        server        => Net::Blossom::Server->new(
+            storage        => $storage,
+            mirror_fetcher => sub { return { body => $body } },
+        ),
+        authorization => Net::Blossom::Server::Authorization->new(clock => sub { $NOW }),
+    )->to_app;
+    my $content = $JSON->encode({ url => 'https://source.example/blob.bin' });
+
+    my $response = $app->(env(
+        method => 'PUT',
+        path   => '/mirror',
+        body   => $content,
+        env    => {
+            CONTENT_TYPE       => 'application/json',
+            CONTENT_LENGTH     => length($content),
+            HTTP_AUTHORIZATION => auth_header(
+                $key,
+                action => 'upload',
+                hashes => [$SHA256],
+            ),
+        },
+    ));
+
+    is($response->[0], 409, 'mirror mismatch status');
+    my $headers = headers_hash([@{$response->[1]}]);
+    is($headers->{'x-reason'}, 'mirrored blob hash is not authorized', 'mirror mismatch reason');
+    my ($upload) = $storage->uploads;
+    is($upload->{commit}, undef, 'mirror mismatch does not commit');
 };
 
 subtest 'PSGI app maps BUD-11 authorization failures to 401 responses' => sub {

@@ -3,6 +3,7 @@ package Net::Blossom::Server::Authorization;
 use strictures 2;
 
 use Net::Blossom::_ConstructorArgs ();
+use Net::Blossom::Server::AuthorizationResult;
 use Net::Blossom::Server::Error;
 use Net::Blossom::Server::Request;
 
@@ -46,6 +47,12 @@ sub domains {
 
 sub authorize_request {
     my ($self, $request) = @_;
+    my $result = $self->authorize($request);
+    return defined $result ? $result->pubkey : undef;
+}
+
+sub authorize {
+    my ($self, $request) = @_;
     croak "request must be a Net::Blossom::Server::Request"
         unless blessed($request) && $request->isa('Net::Blossom::Server::Request');
 
@@ -53,17 +60,14 @@ sub authorize_request {
     return undef unless defined $requirements;
 
     my $event = $self->_event_from_authorization_header($request->header('authorization'));
-    $self->_validate_event($event, %$requirements);
-    return $event->pubkey;
+    return $self->_validate_event($event, %$requirements);
 }
 
 sub _request_requirements {
     my ($request) = @_;
 
-    if ($request->path eq '/upload' && $request->method eq 'PUT') {
-        my $sha256 = $request->header('x-sha-256');
-        _unauthorized('missing X-SHA-256 header') unless defined $sha256 && length $sha256;
-        _unauthorized('X-SHA-256 must be 64-char lowercase hex') unless $sha256 =~ $HEX64;
+    if ($request->path eq '/upload' && ($request->method eq 'PUT' || $request->method eq 'HEAD')) {
+        my $sha256 = _required_sha256_header($request);
         return {
             action        => 'upload',
             sha256        => $sha256,
@@ -71,13 +75,32 @@ sub _request_requirements {
         };
     }
 
-    if ($request->path =~ m{\A/([0-9a-f]{64})\z}) {
+    if ($request->path eq '/media' && ($request->method eq 'PUT' || $request->method eq 'HEAD')) {
+        my $sha256 = _required_sha256_header($request);
+        return {
+            action        => 'media',
+            sha256        => $sha256,
+            hash_required => 1,
+        };
+    }
+
+    if ($request->path eq '/mirror' && $request->method eq 'PUT') {
+        return {
+            action        => 'upload',
+            hash_required => 1,
+            deferred_hash => 1,
+        };
+    }
+
+    if ($request->path =~ m{\A/([0-9a-f]{64})(?:\.[^/]+)?\z}) {
         return {
             action        => 'get',
             sha256        => $1,
             hash_required => 0,
-        } if $request->method eq 'GET';
+        } if $request->method eq 'GET' || $request->method eq 'HEAD';
+    }
 
+    if ($request->path =~ m{\A/([0-9a-f]{64})\z}) {
         return {
             action        => 'delete',
             sha256        => $1,
@@ -95,6 +118,14 @@ sub _request_requirements {
     }
 
     return undef;
+}
+
+sub _required_sha256_header {
+    my ($request) = @_;
+    my $sha256 = $request->header('x-sha-256');
+    _unauthorized('missing X-SHA-256 header') unless defined $sha256 && length $sha256;
+    _unauthorized('X-SHA-256 must be 64-char lowercase hex') unless $sha256 =~ $HEX64;
+    return $sha256;
 }
 
 sub _event_from_authorization_header {
@@ -161,18 +192,29 @@ sub _validate_event {
     }
 
     my @hashes = _tag_values($event, 'x');
+    for my $hash (@hashes) {
+        _unauthorized('authorization x tag must be 64-char lowercase hex')
+            unless defined $hash && $hash =~ $HEX64;
+    }
+
     if ($requirements{hash_required}) {
         _unauthorized('authorization x tag is required')
             unless @hashes;
-        _unauthorized('authorization x tag does not match request hash')
-            unless grep { $_ eq $requirements{sha256} } @hashes;
+        if (!$requirements{deferred_hash}) {
+            _unauthorized('authorization x tag does not match request hash')
+                unless grep { $_ eq $requirements{sha256} } @hashes;
+        }
     }
     elsif (defined $requirements{sha256} && @hashes) {
         _unauthorized('authorization x tag does not match request hash')
             unless grep { $_ eq $requirements{sha256} } @hashes;
     }
 
-    return 1;
+    return Net::Blossom::Server::AuthorizationResult->new(
+        pubkey => $event->pubkey,
+        action => $requirements{action},
+        hashes => \@hashes,
+    );
 }
 
 sub _tag_values {
@@ -222,6 +264,7 @@ Net::Blossom::Server::Authorization - BUD-11 server authorization verifier
     );
 
     my $pubkey = $auth->authorize_request($request);
+    my $result = $auth->authorize($request);
 
 =head1 DESCRIPTION
 
@@ -275,9 +318,19 @@ Returns the clock code reference.
 Validates the request's BUD-11 C<Authorization> header and returns the verified
 event pubkey. The request must be a C<Net::Blossom::Server::Request>.
 
+=head2 authorize
+
+    my $result = $auth->authorize($request);
+
+Validates the request and returns a
+L<Net::Blossom::Server::AuthorizationResult>. This method is useful for
+endpoints such as C<PUT /mirror>, where the authorized hash is not known until
+after the server fetches and hashes the origin blob.
+
 Implemented endpoint requirements are C<GET /E<lt>sha256E<gt>>,
-C<PUT /upload>, C<DELETE /E<lt>sha256E<gt>>, and
-C<GET /list/E<lt>pubkeyE<gt>>. Unknown routes return C<undef> so the server core
-can return its normal routing response.
+C<HEAD /E<lt>sha256E<gt>>, C<PUT /upload>, C<HEAD /upload>,
+C<DELETE /E<lt>sha256E<gt>>, C<GET /list/E<lt>pubkeyE<gt>>,
+C<PUT /mirror>, C<PUT /media>, and C<HEAD /media>. Unknown routes return
+C<undef> so the server core can return its normal routing response.
 
 =cut

@@ -11,5 +11,7 @@ use_ok('Net::Blossom::Server::UploadResult');
 use_ok('Net::Blossom::Server::PSGI');
 use_ok('Net::Blossom::Server::Error');
 use_ok('Net::Blossom::Server::Authorization');
+use_ok('Net::Blossom::Server::AuthorizationResult');
+use_ok('Net::Blossom::Server::MirrorFetcher::HTTP');
 
 done_testing;

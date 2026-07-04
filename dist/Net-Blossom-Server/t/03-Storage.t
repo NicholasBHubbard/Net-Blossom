@@ -270,6 +270,28 @@ subtest 'receive_blob aborts failed uploads' => sub {
     is($upload->{aborted}, 1, 'mismatch aborts upload');
 };
 
+subtest 'receive_blob aborts authorized hash mismatches before commit' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $error = dies {
+        $server->receive_blob(
+            'body',
+            allowed_sha256         => ['0' x 64],
+            sha256_mismatch_status => 409,
+            sha256_mismatch_reason => 'mirrored blob hash is not authorized',
+        );
+    };
+
+    isa_ok($error, 'Net::Blossom::Server::Error');
+    is($error->status, 409, 'typed mismatch status');
+    is($error->reason, 'mirrored blob hash is not authorized', 'typed mismatch reason');
+
+    my ($upload) = $storage->uploads;
+    is($upload->{commit}, undef, 'authorized hash mismatch does not commit');
+    is($upload->{aborted}, 1, 'authorized hash mismatch aborts upload');
+};
+
 subtest 'receive_blob aborts content length mismatches' => sub {
     my $storage = Local::Storage->new;
     my $server = Net::Blossom::Server->new(storage => $storage);
@@ -278,6 +300,29 @@ subtest 'receive_blob aborts content length mismatches' => sub {
     like(dies {
         $server->receive_blob($body, content_length => length($body) + 1);
     }, qr/content_length mismatch/, 'content length mismatch rejected');
+
+    my ($upload) = $storage->uploads;
+    is($upload->{commit}, undef, 'length mismatch does not commit');
+    is($upload->{aborted}, 1, 'length mismatch aborts upload');
+};
+
+subtest 'receive_blob can report content length mismatches as typed errors' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(storage => $storage);
+    my $body = 'short';
+
+    my $error = dies {
+        $server->receive_blob(
+            $body,
+            content_length                 => length($body) + 1,
+            content_length_mismatch_status => 400,
+            content_length_mismatch_reason => 'content_length mismatch',
+        );
+    };
+
+    isa_ok($error, 'Net::Blossom::Server::Error');
+    is($error->status, 400, 'typed content length mismatch status');
+    is($error->reason, 'content_length mismatch', 'typed content length mismatch reason');
 
     my ($upload) = $storage->uploads;
     is($upload->{commit}, undef, 'length mismatch does not commit');
@@ -334,12 +379,24 @@ subtest 'receive_blob validates arguments' => sub {
         qr/type must be a scalar/, 'type scalar required');
     like(dies { $server->receive_blob('body', expected_sha256 => 'A' x 64) },
         qr/expected_sha256 must be 64-char lowercase hex/, 'uppercase expected sha rejected');
+    like(dies { $server->receive_blob('body', allowed_sha256 => '0' x 64) },
+        qr/allowed_sha256 must be an array reference/, 'allowed hashes arrayref required');
+    like(dies { $server->receive_blob('body', allowed_sha256 => ['A' x 64]) },
+        qr/allowed_sha256 must contain 64-char lowercase hex values/, 'allowed hashes validated');
+    like(dies { $server->receive_blob('body', sha256_mismatch_status => 'bad') },
+        qr/sha256_mismatch_status must be an HTTP status code/, 'mismatch status validated');
+    like(dies { $server->receive_blob('body', sha256_mismatch_reason => []) },
+        qr/sha256_mismatch_reason must be a scalar/, 'mismatch reason scalar required');
     like(dies { $server->receive_blob('body', pubkey => []) },
         qr/pubkey must be a scalar/, 'pubkey scalar required');
     like(dies { $server->receive_blob('body', pubkey => 'A' x 64) },
         qr/pubkey must be 64-char lowercase hex/, 'uppercase pubkey rejected');
     like(dies { $server->receive_blob('body', content_length => -1) },
         qr/content_length must be a non-negative integer/, 'bad content length rejected');
+    like(dies { $server->receive_blob('body', content_length_mismatch_status => 'bad') },
+        qr/content_length_mismatch_status must be an HTTP status code/, 'content length mismatch status validated');
+    like(dies { $server->receive_blob('body', content_length_mismatch_reason => []) },
+        qr/content_length_mismatch_reason must be a scalar/, 'content length mismatch reason scalar required');
 };
 
 done_testing;

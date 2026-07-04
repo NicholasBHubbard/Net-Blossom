@@ -77,8 +77,9 @@ C<uploaded>, and optional C<pubkey> values at commit time.
     my $upload = $storage->begin_upload(%context);
 
 Starts an upload and returns an upload writer object. The context includes
-C<type> and may include C<expected_sha256>, C<content_length>, and C<pubkey>.
-The upload writer must provide C<write>, C<commit>, and C<abort>.
+C<type> and may include C<expected_sha256>, C<allowed_sha256>,
+C<content_length>, and C<pubkey>. The upload writer must provide C<write>,
+C<commit>, and C<abort>.
 
 =head2 get_blob
 
@@ -88,6 +89,16 @@ Returns a C<Net::Blossom::Server::BlobResult> for an available blob, or
 C<undef> when the blob is not available. The result contains both the
 C<Net::Blossom::BlobDescriptor> and the blob body as a scalar, an array
 reference of scalar chunks, or a stream object with C<read> or C<getline>.
+
+=head2 head_blob
+
+    my $descriptor = $storage->head_blob($sha256);
+
+Optional method used by C<HEAD /E<lt>sha256E<gt>>. Storage implementations with
+large blobs should provide this to avoid loading blob bodies for metadata-only
+requests. It may return a C<Net::Blossom::BlobDescriptor>, a
+C<Net::Blossom::Server::BlobResult>, or C<undef> when the blob is unavailable.
+When absent, the server falls back to C<get_blob>.
 
 =head2 delete_blob
 
