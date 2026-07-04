@@ -177,6 +177,31 @@ sub handle_delete_blob {
     return Net::Blossom::Server::Response->empty(204);
 }
 
+sub handle_list_blobs {
+    my $self = shift;
+    my ($request, %opts) = @_;
+    my @unknown = keys %opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
+
+    croak "request must be a Net::Blossom::Server::Request"
+        unless blessed($request) && $request->isa('Net::Blossom::Server::Request');
+    croak "list request method must be GET" unless $request->method eq 'GET';
+
+    my $pubkey = _pubkey_from_list_path($request->path);
+    my %list_opts = _list_options_from_query($request->query);
+    my $blobs = $self->storage->list_blobs($pubkey, %list_opts);
+    croak "storage list_blobs must return an array reference" unless ref($blobs) eq 'ARRAY';
+
+    my @body;
+    for my $blob (@$blobs) {
+        croak "storage list_blobs items must be Net::Blossom::BlobDescriptor"
+            unless blessed($blob) && $blob->isa('Net::Blossom::BlobDescriptor');
+        push @body, $blob->to_hash;
+    }
+
+    return Net::Blossom::Server::Response->json(\@body, status => 200);
+}
+
 sub handle_request {
     my $self = shift;
     my ($request, %opts) = @_;
@@ -193,6 +218,12 @@ sub handle_request {
         return $self->handle_upload($request, %opts);
     }
 
+    if ($request->path =~ m{\A/list/[0-9a-f]{64}\z}) {
+        return Net::Blossom::Server::Response->empty(405, headers => { Allow => 'GET' })
+            unless $request->method eq 'GET';
+        return $self->handle_list_blobs($request);
+    }
+
     if ($request->path =~ m{\A/[0-9a-f]{64}\z}) {
         if ($request->method eq 'GET') {
             return $self->handle_get_blob($request);
@@ -206,6 +237,15 @@ sub handle_request {
     return Net::Blossom::Server::Response->empty(404);
 }
 
+sub _pubkey_from_list_path {
+    my ($path) = @_;
+    my ($pubkey) = defined $path ? ($path =~ m{\A/list/([^/]+)\z}) : ();
+    croak "list request path must be /list/<pubkey>"
+        unless defined $pubkey && length($pubkey) == 64;
+    _validate_pubkey($pubkey);
+    return $pubkey;
+}
+
 sub _sha256_from_blob_path {
     my ($path) = @_;
     my ($sha256) = defined $path ? ($path =~ m{\A/([^/]+)\z}) : ();
@@ -213,6 +253,28 @@ sub _sha256_from_blob_path {
         unless defined $sha256 && length($sha256) == 64;
     croak "sha256 must be 64-char lowercase hex" unless $sha256 =~ $HEX64;
     return $sha256;
+}
+
+sub _list_options_from_query {
+    my ($query) = @_;
+    my %known = map { $_ => 1 } qw(cursor limit);
+    my @unknown = grep { !exists $known{$_} } keys %$query;
+    croak "unknown query parameter(s): " . join(', ', sort @unknown) if @unknown;
+
+    my %opts;
+    if (exists $query->{cursor}) {
+        croak "cursor must be a scalar" if ref($query->{cursor});
+        croak "cursor must be 64-char lowercase hex" unless $query->{cursor} =~ $HEX64;
+        $opts{cursor} = $query->{cursor};
+    }
+
+    if (exists $query->{limit}) {
+        croak "limit must be a scalar" if ref($query->{limit});
+        croak "limit must be a positive integer" unless $query->{limit} =~ /\A[1-9][0-9]*\z/;
+        $opts{limit} = $query->{limit};
+    }
+
+    return %opts;
 }
 
 sub _copy_body_to_upload {
@@ -487,6 +549,22 @@ The method calls C<< $server->storage->delete_blob($sha256, pubkey => $pubkey) >
 It returns C<204> when storage deletes an owner relationship and C<404> when
 storage returns false.
 
+=head2 handle_list_blobs
+
+    my $response = $server->handle_list_blobs($request);
+
+Handles a normalized C<GET /list/E<lt>pubkeyE<gt>> request and returns a
+C<Net::Blossom::Server::Response>. The request path must contain one lowercase
+64-character public key segment.
+
+The method reads optional C<cursor> and C<limit> query parameters. C<cursor>
+must be a lowercase 64-character SHA-256 hash. C<limit> must be a positive
+integer.
+
+The method calls C<< $server->storage->list_blobs($pubkey, %opts) >> and
+returns status C<200> with a JSON array of blob descriptors. Storage must return
+an array reference of C<Net::Blossom::BlobDescriptor> objects.
+
 =head2 handle_request
 
     my $response = $server->handle_request($request, %opts);
@@ -510,6 +588,10 @@ Delegates to C<handle_get_blob>.
 =item * C<DELETE /E<lt>sha256E<gt>>
 
 Delegates to C<handle_delete_blob>.
+
+=item * C<GET /list/E<lt>pubkeyE<gt>>
+
+Delegates to C<handle_list_blobs>.
 
 =back
 

@@ -25,7 +25,11 @@ sub dies(&) {
 
     sub new {
         my ($class, %args) = @_;
-        return bless { uploads => [], blobs => $args{blobs} || {} }, $class;
+        return bless {
+            uploads    => [],
+            blobs      => $args{blobs} || {},
+            list_blobs => $args{list_blobs} || [],
+        }, $class;
     }
 
     sub begin_upload {
@@ -48,7 +52,9 @@ sub dies(&) {
     }
 
     sub list_blobs {
-        return [];
+        my ($self, $pubkey, %opts) = @_;
+        $self->{last_list_blobs} = [$pubkey, \%opts];
+        return $self->{list_blobs} || [];
     }
 
     sub uploads {
@@ -181,6 +187,27 @@ subtest 'handle_request dispatches DELETE /<sha256>' => sub {
     is_deeply($storage->{last_delete_blob}, [$SHA256, { pubkey => $PUBKEY }], 'delete passed to storage');
 };
 
+subtest 'handle_request dispatches GET /list/<pubkey>' => sub {
+    my $descriptor = Net::Blossom::BlobDescriptor->new(
+        url      => "https://cdn.example.com/$SHA256",
+        sha256   => $SHA256,
+        size     => 12,
+        type     => 'text/plain',
+        uploaded => 1725105921,
+    );
+    my $storage = Local::Storage->new(list_blobs => [$descriptor]);
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $response = $server->handle_request(
+        request(method => 'GET', path => "/list/$PUBKEY"),
+    );
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 200, 'list status');
+    is_deeply($JSON->decode($response->body), [$descriptor->to_hash], 'list response body');
+    is_deeply($storage->{last_list_blobs}, [$PUBKEY, {}], 'list passed to storage');
+};
+
 subtest 'handle_request returns 404 for unknown paths' => sub {
     my $server = Net::Blossom::Server->new(storage => Local::Storage->new);
 
@@ -212,6 +239,17 @@ subtest 'handle_request returns 405 for unsupported upload methods' => sub {
     isa_ok($response, 'Net::Blossom::Server::Response');
     is($response->status, 405, 'unsupported method status');
     is($response->header('allow'), 'PUT', 'allow header');
+    is($response->body, '', 'unsupported method body');
+};
+
+subtest 'handle_request returns 405 for unsupported list methods' => sub {
+    my $server = Net::Blossom::Server->new(storage => Local::Storage->new);
+
+    my $response = $server->handle_request(request(method => 'POST', path => "/list/$PUBKEY"));
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 405, 'unsupported method status');
+    is($response->header('allow'), 'GET', 'allow header');
     is($response->body, '', 'unsupported method body');
 };
 
