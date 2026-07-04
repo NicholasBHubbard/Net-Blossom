@@ -128,6 +128,61 @@ sub handle_upload {
     );
 }
 
+sub handle_get_blob {
+    my $self = shift;
+    my ($request, %opts) = @_;
+    my @unknown = keys %opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
+
+    croak "request must be a Net::Blossom::Server::Request"
+        unless blessed($request) && $request->isa('Net::Blossom::Server::Request');
+    croak "blob request method must be GET" unless $request->method eq 'GET';
+
+    my $sha256 = _sha256_from_blob_path($request->path);
+    my $descriptor = $self->storage->get_blob($sha256);
+    return Net::Blossom::Server::Response->empty(404) unless defined $descriptor;
+
+    croak "storage get_blob must return a Net::Blossom::BlobDescriptor"
+        unless blessed($descriptor) && $descriptor->isa('Net::Blossom::BlobDescriptor');
+    croak "storage returned descriptor sha256 mismatch" unless $descriptor->sha256 eq $sha256;
+
+    return Net::Blossom::Server::Response->json($descriptor->to_hash, status => 200);
+}
+
+sub handle_request {
+    my $self = shift;
+    my ($request, %opts) = @_;
+    my %known = map { $_ => 1 } qw(pubkey);
+    my @unknown = grep { !exists $known{$_} } keys %opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
+
+    croak "request must be a Net::Blossom::Server::Request"
+        unless blessed($request) && $request->isa('Net::Blossom::Server::Request');
+
+    if ($request->path eq '/upload') {
+        return Net::Blossom::Server::Response->empty(405, headers => { Allow => 'PUT' })
+            unless $request->method eq 'PUT';
+        return $self->handle_upload($request, %opts);
+    }
+
+    if ($request->path =~ m{\A/[0-9a-f]{64}\z}) {
+        return Net::Blossom::Server::Response->empty(405, headers => { Allow => 'GET' })
+            unless $request->method eq 'GET';
+        return $self->handle_get_blob($request);
+    }
+
+    return Net::Blossom::Server::Response->empty(404);
+}
+
+sub _sha256_from_blob_path {
+    my ($path) = @_;
+    my ($sha256) = defined $path ? ($path =~ m{\A/([^/]+)\z}) : ();
+    croak "blob request path must be /<sha256>"
+        unless defined $sha256 && length($sha256) == 64;
+    croak "sha256 must be 64-char lowercase hex" unless $sha256 =~ $HEX64;
+    return $sha256;
+}
+
 sub _copy_body_to_upload {
     my ($self, $body, $upload, $sha) = @_;
     my $size = 0;
@@ -370,9 +425,57 @@ Authorization verification is deliberately outside this method.
 
 =back
 
+=head2 handle_get_blob
+
+    my $response = $server->handle_get_blob($request);
+
+Handles a normalized C<GET /E<lt>sha256E<gt>> request and returns a
+C<Net::Blossom::Server::Response>. The request path must contain one lowercase
+64-character SHA-256 hash segment.
+
+The method calls C<< $server->storage->get_blob($sha256) >>. It returns C<404>
+when storage returns C<undef>. Otherwise, storage must return a
+C<Net::Blossom::BlobDescriptor> whose C<sha256> matches the request path, and
+the response body is that descriptor encoded as JSON with status C<200>.
+
+=head2 handle_request
+
+    my $response = $server->handle_request($request, %opts);
+
+Dispatches a normalized C<Net::Blossom::Server::Request> and returns a
+C<Net::Blossom::Server::Response>. This is the framework-neutral routing entry
+point for future gateway adapters.
+
+Currently implemented routes:
+
+=over 4
+
+=item * C<PUT /upload>
+
+Delegates to C<handle_upload>.
+
+=item * C<GET /E<lt>sha256E<gt>>
+
+Delegates to C<handle_get_blob>.
+
+=back
+
+Unknown paths return C<404>. Known paths with unsupported methods return C<405>.
+
+Options:
+
+=over 4
+
+=item * C<pubkey>
+
+Optional already-verified uploader public key. Passed through to C<handle_upload>
+for upload requests.
+
+=back
+
 =head1 STATUS
 
-The server core is under active development. Endpoint routing and gateway
-adapters are not implemented yet.
+The server core is under active development. Additional endpoint handlers and
+gateway adapters are not implemented yet.
 
 =cut
