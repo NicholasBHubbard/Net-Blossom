@@ -112,3 +112,7 @@ Inspect the active Perl layout:
 /home/_73/.local/bin/plx --config
 /home/_73/.local/bin/plx --libs
 ```
+
+## AI Usage
+
+This code was developed in part with AI tooling such as Claude Code and Codex. We want to be upfront about that.
