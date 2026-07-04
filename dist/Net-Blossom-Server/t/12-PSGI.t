@@ -11,6 +11,7 @@ use Net::Blossom::Server::Authorization;
 use Net::Blossom::Server::BlobResult;
 use Net::Blossom::Server::Error;
 use Net::Blossom::Server::PSGI;
+use Net::Blossom::Server::Response;
 use Net::Nostr::Key;
 
 my $PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
@@ -125,6 +126,38 @@ sub dies(&) {
     }
 }
 
+{
+    package Local::CorsResponseServer;
+    use strictures 2;
+
+    our @ISA = ('Net::Blossom::Server');
+
+    sub handle_request {
+        return Net::Blossom::Server::Response->text(
+            'ok',
+            headers => {
+                'Access-Control-Allow-Origin' => 'https://wrong.example',
+            },
+        );
+    }
+}
+
+{
+    package Local::LowercaseCorsResponseServer;
+    use strictures 2;
+
+    our @ISA = ('Net::Blossom::Server');
+
+    sub handle_request {
+        return Net::Blossom::Server::Response->text(
+            'ok',
+            headers => {
+                'access-control-allow-origin' => 'https://wrong.example',
+            },
+        );
+    }
+}
+
 sub env {
     my (%args) = @_;
     return {
@@ -146,6 +179,17 @@ sub headers_hash {
         $headers{lc $name} = $value;
     }
     return \%headers;
+}
+
+sub header_values {
+    my ($pairs, $header_name) = @_;
+    my @values;
+    while (@$pairs) {
+        my $name = shift @$pairs;
+        my $value = shift @$pairs;
+        push @values, $value if lc($name) eq lc($header_name);
+    }
+    return @values;
 }
 
 sub auth_header {
@@ -239,6 +283,54 @@ subtest 'PSGI app translates GET blob responses' => sub {
     is($headers->{'content-length'}, length($body), 'content length');
     is_deeply($response->[2], [$body], 'scalar response body converted to PSGI array body');
     is($storage->{last_get_blob}, $SHA256, 'sha256 passed to storage');
+};
+
+subtest 'PSGI app adds CORS headers to successful responses' => sub {
+    my $body = 'hello blob';
+    my $descriptor = Net::Blossom::BlobDescriptor->new(
+        url      => "https://cdn.example.com/$SHA256",
+        sha256   => $SHA256,
+        size     => length($body),
+        type     => 'text/plain',
+        uploaded => 1725105921,
+    );
+    my $storage = Local::Storage->new(blobs => {
+        $SHA256 => Net::Blossom::Server::BlobResult->new(
+            descriptor => $descriptor,
+            body       => $body,
+        ),
+    });
+    my $app = Net::Blossom::Server::PSGI->new(
+        server => Net::Blossom::Server->new(storage => $storage),
+    )->to_app;
+
+    my $response = $app->(env(method => 'GET', path => "/$SHA256"));
+    my $headers = headers_hash([@{$response->[1]}]);
+
+    is($response->[0], 200, 'success status');
+    is($headers->{'access-control-allow-origin'}, '*', 'success CORS origin');
+};
+
+subtest 'PSGI app enforces BUD-01 CORS origin over custom response headers' => sub {
+    my $server = bless {}, 'Local::CorsResponseServer';
+    my $app = Net::Blossom::Server::PSGI->new(server => $server)->to_app;
+
+    my $response = $app->(env(method => 'GET', path => "/$SHA256"));
+    my $headers = headers_hash([@{$response->[1]}]);
+
+    is($response->[0], 200, 'success status');
+    is($headers->{'access-control-allow-origin'}, '*', 'required BUD-01 origin wins');
+};
+
+subtest 'PSGI app emits one BUD-01 CORS origin header regardless of input casing' => sub {
+    my $server = bless {}, 'Local::LowercaseCorsResponseServer';
+    my $app = Net::Blossom::Server::PSGI->new(server => $server)->to_app;
+
+    my $response = $app->(env(method => 'GET', path => "/$SHA256"));
+    my @origins = header_values([@{$response->[1]}], 'Access-Control-Allow-Origin');
+
+    is($response->[0], 200, 'success status');
+    is_deeply(\@origins, ['*'], 'single required BUD-01 origin header');
 };
 
 subtest 'PSGI app translates HEAD blob responses' => sub {
@@ -488,6 +580,7 @@ subtest 'PSGI app maps BUD-11 authorization failures to 401 responses' => sub {
     is($response->[0], 401, 'missing authorization status');
     my $headers = headers_hash([@{$response->[1]}]);
     is($headers->{'www-authenticate'}, 'Nostr', 'Nostr challenge header');
+    is($headers->{'access-control-allow-origin'}, '*', 'typed error CORS origin');
     is($headers->{'content-length'}, 0, 'empty error body');
     is($storage->{last_delete_blob}, undef, 'unauthorized delete does not reach storage');
 };
@@ -502,6 +595,7 @@ subtest 'PSGI app maps request translation failures to 400 responses' => sub {
     is($response->[0], 400, 'bad query status');
     my $headers = headers_hash([@{$response->[1]}]);
     is($headers->{'x-reason'}, 'Bad Request', 'generic bad request reason');
+    is($headers->{'access-control-allow-origin'}, '*', 'bad request CORS origin');
 };
 
 subtest 'PSGI app maps typed and unexpected failures to responses' => sub {
@@ -525,8 +619,34 @@ subtest 'PSGI app maps typed and unexpected failures to responses' => sub {
 
     $response = $unexpected->(env(method => 'GET', path => "/$SHA256"));
     is($response->[0], 500, 'unexpected error status');
-    is(headers_hash([@{$response->[1]}])->{'x-reason'}, 'Internal Server Error',
-        'unexpected error does not leak backend detail');
+    my $headers = headers_hash([@{$response->[1]}]);
+    is($headers->{'x-reason'}, 'Internal Server Error', 'unexpected error does not leak backend detail');
+    is($headers->{'access-control-allow-origin'}, '*', 'unexpected error CORS origin');
+};
+
+subtest 'PSGI app answers BUD-01 CORS preflight requests' => sub {
+    my $app = Net::Blossom::Server::PSGI->new(
+        server => Net::Blossom::Server->new(storage => Local::Storage->new),
+    )->to_app;
+
+    my $response = $app->(env(
+        method => 'OPTIONS',
+        path   => '/upload',
+        env    => {
+            HTTP_ORIGIN                         => 'https://client.example',
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD  => 'PUT',
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS => 'Authorization, X-SHA-256',
+        },
+    ));
+    my $headers = headers_hash([@{$response->[1]}]);
+
+    is($response->[0], 204, 'preflight status');
+    is_deeply($response->[2], [''], 'preflight body');
+    is($headers->{'access-control-allow-origin'}, '*', 'preflight CORS origin');
+    is($headers->{'access-control-allow-headers'}, 'Authorization, *', 'preflight allowed headers');
+    is($headers->{'access-control-allow-methods'}, 'GET, HEAD, PUT, DELETE', 'preflight allowed methods');
+    is($headers->{'access-control-max-age'}, 86400, 'preflight max age');
+    is($headers->{'content-length'}, 0, 'preflight empty body length');
 };
 
 subtest 'validates constructor arguments' => sub {

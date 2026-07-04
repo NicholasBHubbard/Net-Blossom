@@ -13,6 +13,16 @@ use Carp qw(croak);
 use Class::Tiny qw(server authorize authorization);
 use Scalar::Util qw(blessed);
 
+my %CORS_HEADERS = (
+    'Access-Control-Allow-Origin' => '*',
+);
+
+my %PREFLIGHT_HEADERS = (
+    'Access-Control-Allow-Headers' => 'Authorization, *',
+    'Access-Control-Allow-Methods' => 'GET, HEAD, PUT, DELETE',
+    'Access-Control-Max-Age'       => 86400,
+);
+
 sub new {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
@@ -42,6 +52,9 @@ sub to_app {
         my ($env) = @_;
         my $request = eval { _request_from_env($env) };
         return _exception_to_psgi($@, 400, 'Bad Request') if $@;
+
+        return _response_to_psgi(_preflight_response())
+            if $request->method eq 'OPTIONS';
 
         my %opts;
 
@@ -97,7 +110,30 @@ sub _response_to_psgi {
 
     my $body = $response->body;
     $body = [$body] unless ref($body);
-    return [$response->status, $response->header_pairs, $body];
+    return [$response->status, _header_pairs_with_cors($response), $body];
+}
+
+sub _preflight_response {
+    return Net::Blossom::Server::Response->empty(204, headers => \%PREFLIGHT_HEADERS);
+}
+
+sub _header_pairs_with_cors {
+    my ($response) = @_;
+    my $headers = $response->headers;
+
+    for my $name (keys %CORS_HEADERS) {
+        my $lower = lc $name;
+        for my $existing (keys %$headers) {
+            delete $headers->{$existing} if lc($existing) eq $lower;
+        }
+        $headers->{$name} = $CORS_HEADERS{$name};
+    }
+
+    my @pairs;
+    for my $name (sort keys %$headers) {
+        push @pairs, $name, $headers->{$name};
+    }
+    return \@pairs;
 }
 
 sub _exception_to_psgi {
@@ -199,6 +235,10 @@ The adapter translates the PSGI environment into a
 C<Net::Blossom::Server::Request>, applies optional authorization, and passes the
 request into C<Net::Blossom::Server>. The returned
 C<Net::Blossom::Server::Response> is translated into the PSGI response array.
+
+CORS headers required by BUD-01 are added to every PSGI response. C<OPTIONS>
+requests are handled directly by this adapter as CORS preflight requests and do
+not reach authorization or server route dispatch.
 
 Malformed requests are returned as C<400> responses. Typed
 C<Net::Blossom::Server::Error> exceptions are returned with their configured
