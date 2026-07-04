@@ -93,3 +93,141 @@ sub authorization_header {
 }
 
 1;
+
+=pod
+
+=head1 NAME
+
+Net::Blossom::AuthToken - BUD-11 Blossom authorization token builder
+
+=head1 SYNOPSIS
+
+    use Net::Blossom::AuthToken;
+
+    my $token = Net::Blossom::AuthToken->new(
+        key        => $key,
+        action     => 'upload',
+        content    => 'Upload Blob',
+        expiration => time + 300,
+        hashes     => [$sha256],
+    );
+
+    my $header = $token->authorization_header;
+
+=head1 DESCRIPTION
+
+C<Net::Blossom::AuthToken> builds BUD-11 Nostr authorization events and encodes
+them as Blossom C<Authorization> header values.
+
+The C<key> argument must be an object that provides C<pubkey_hex> and
+C<sign_event>. C<pubkey_hex> must return the Nostr public key as lowercase
+64-character hex. C<sign_event> receives the C<Net::Nostr::Event> object,
+signs it, and must leave the event with a valid signature.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $token = Net::Blossom::AuthToken->new(%args);
+
+Required arguments:
+
+=over 4
+
+=item * C<key>
+
+A signing object that provides C<pubkey_hex> and C<sign_event>.
+
+=item * C<action>
+
+One of C<get>, C<upload>, C<list>, C<delete>, or C<media>.
+
+=item * C<content>
+
+The event content string.
+
+=item * C<expiration>
+
+Unix timestamp. It must be a non-negative integer and must be in the future.
+
+=back
+
+Optional arguments:
+
+=over 4
+
+=item * C<server>
+
+A lowercase domain name for one server scope. This is a domain only, not a URL.
+
+=item * C<servers>
+
+Array reference of lowercase domain names for server scope.
+
+=item * C<hashes>
+
+Array reference of lowercase 64-character SHA-256 hashes. C<upload>,
+C<delete>, and C<media> authorizations require at least one hash.
+
+=item * C<created_at>
+
+Unix timestamp for the Nostr event. Defaults to C<time>.
+
+=back
+
+Unknown arguments or invalid values croak.
+
+=head1 ACCESSORS
+
+=head2 key
+
+Returns the signing object passed to C<new>.
+
+=head2 action
+
+Returns the BUD-11 action.
+
+=head2 content
+
+Returns the event content.
+
+=head2 expiration
+
+Returns the expiration timestamp.
+
+=head2 server
+
+Returns the original C<server> argument, when one was passed.
+
+=head2 servers
+
+Returns the normalized array reference of server domain names.
+
+=head2 hashes
+
+Returns the array reference of hash scopes.
+
+=head2 created_at
+
+Returns the event creation timestamp.
+
+=head1 METHODS
+
+=head2 to_event
+
+    my $event = $token->to_event;
+
+Builds, signs, and returns a C<Net::Nostr::Event> for kind C<24242>.
+
+=head2 authorization_header
+
+    my $header = $token->authorization_header;
+
+Returns the C<Nostr ...> C<Authorization> header value. The payload is canonical
+JSON encoded as unpadded base64url.
+
+=head1 SEE ALSO
+
+L<Net::Blossom::Client>, L<Net::Nostr::Event>
+
+=cut

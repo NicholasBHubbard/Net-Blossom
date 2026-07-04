@@ -47,3 +47,72 @@ sub _validate_status {
 }
 
 1;
+
+=pod
+
+=head1 NAME
+
+Net::Blossom::Response - Blossom HTTP success response object
+
+=head1 SYNOPSIS
+
+    my $response = $client->get_blob($sha256);
+
+    say $response->status;
+    say $response->header('content-type');
+
+=head1 DESCRIPTION
+
+C<Net::Blossom::Response> represents a successful HTTP response returned by
+C<Net::Blossom::Client>.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $response = Net::Blossom::Response->new(%args);
+
+Required arguments are C<method>, C<url>, C<status>, and C<reason>. C<status>
+must be a three-digit HTTP status code from C<100> through C<599>.
+
+Optional C<headers> defaults to an empty hash reference. Optional C<content>
+defaults to the empty string.
+
+Unknown arguments or invalid values croak.
+
+=head1 ACCESSORS
+
+=head2 method
+
+Returns the HTTP method.
+
+=head2 url
+
+Returns the request URL.
+
+=head2 status
+
+Returns the HTTP status code.
+
+=head2 reason
+
+Returns the HTTP reason phrase.
+
+=head2 headers
+
+Returns the response headers hash reference.
+
+=head2 content
+
+Returns the response body bytes as a scalar.
+
+=head1 METHODS
+
+=head2 header
+
+    my $value = $response->header($name);
+
+Returns a response header value using case-insensitive lookup. Returns C<undef>
+when C<$name> is undefined or the header is absent.
+
+=cut

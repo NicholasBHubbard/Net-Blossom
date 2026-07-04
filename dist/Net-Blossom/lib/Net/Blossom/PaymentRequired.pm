@@ -41,3 +41,93 @@ sub payment_challenge {
 }
 
 1;
+
+=pod
+
+=head1 NAME
+
+Net::Blossom::PaymentRequired - Blossom 402 payment challenge error
+
+=head1 SYNOPSIS
+
+    my $error = eval { $client->get_blob($sha256); 1 } ? undef : $@;
+
+    if (ref($error) && $error->isa('Net::Blossom::PaymentRequired')) {
+        my @methods = $error->payment_methods;
+        my $cashu   = $error->payment_challenge('cashu');
+    }
+
+=head1 DESCRIPTION
+
+C<Net::Blossom::PaymentRequired> represents a C<402 Payment Required> response
+from a Blossom server. It is a subclass of C<Net::Blossom::Error>.
+
+When this object is produced by C<Net::Blossom::Client>, payment challenges are
+parsed from non-reserved C<X-*> response headers. Known C<cashu> and
+C<lightning> challenges are validated before being exposed. Unknown future
+payment methods are preserved when they have a scalar non-empty payload.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $error = Net::Blossom::PaymentRequired->new(%args);
+
+Accepts the same required arguments as C<Net::Blossom::Error-E<gt>new>. Optional
+C<payment_challenges> must be a hash reference and defaults to an empty hash
+reference.
+
+=head1 ACCESSORS
+
+=head2 method
+
+Returns the HTTP method.
+
+=head2 url
+
+Returns the request URL.
+
+=head2 status
+
+Returns the HTTP status code.
+
+=head2 reason
+
+Returns the HTTP reason phrase.
+
+=head2 x_reason
+
+Returns the optional C<X-Reason> diagnostic.
+
+=head2 headers
+
+Returns the response headers hash reference.
+
+=head2 body
+
+Returns the response body.
+
+=head2 payment_challenges
+
+Returns the payment challenge hash reference keyed by normalized method name.
+
+=head1 METHODS
+
+=head2 payment_methods
+
+    my @methods = $error->payment_methods;
+
+Returns sorted payment method names as a list.
+
+=head2 payment_challenge
+
+    my $challenge = $error->payment_challenge($method);
+
+Returns the challenge string for C<$method>. C<$method> may include an C<X->
+prefix. Returns C<undef> when the method is unknown or undefined.
+
+=head2 as_string
+
+Inherited from C<Net::Blossom::Error>.
+
+=cut

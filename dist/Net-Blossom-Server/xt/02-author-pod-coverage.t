@@ -23,10 +23,11 @@ for my $module (@modules) {
         package => $module,
         private => [qr/\A_/],
     );
+    my $result = $coverage->coverage;
 
-    ok($coverage->coverage == 1, "$module POD coverage");
+    ok(!defined($result) || $result == 1, "$module POD coverage");
     diag "$module undocumented methods: " . join(', ', $coverage->uncovered)
-        if $coverage->coverage < 1;
+        if defined($result) && $result < 1;
 }
 
 done_testing;

@@ -133,3 +133,87 @@ sub _pct_encode {
 }
 
 1;
+
+=pod
+
+=head1 NAME
+
+Net::Blossom::URI - BUD-10 Blossom URI value object
+
+=head1 SYNOPSIS
+
+    use Net::Blossom::URI;
+
+    my $uri = Net::Blossom::URI->new(
+        sha256    => $sha256,
+        extension => 'png',
+        xs        => ['cdn.example.com'],
+        as        => [$pubkey],
+        sz        => 1234,
+    );
+
+    my $string = $uri->to_string;
+    my $parsed = Net::Blossom::URI->parse($string);
+
+=head1 DESCRIPTION
+
+C<Net::Blossom::URI> builds and parses BUD-10 C<blossom:> URIs.
+
+=head1 CONSTRUCTORS
+
+=head2 new
+
+    my $uri = Net::Blossom::URI->new(%args);
+
+Required C<sha256> must be lowercase 64-character hex.
+
+Optional C<extension> defaults to C<bin> and must contain only letters and
+digits. A leading dot is removed.
+
+Optional C<xs> is an array reference of server hints. Each hint must be a domain
+or HTTP/HTTPS root URL without a path. Optional C<as> is an array reference of
+lowercase 64-character author public keys. Optional C<sz> is a positive integer
+byte size.
+
+Unknown arguments or invalid values croak.
+
+=head2 parse
+
+    my $uri = Net::Blossom::URI->parse($value);
+
+Parses a C<blossom:> URI and returns a C<Net::Blossom::URI> object. Fragments
+are rejected. Unknown query parameters, duplicate C<sz>, missing values, and
+invalid percent encoding croak.
+
+=head1 ACCESSORS
+
+=head2 sha256
+
+Returns the lowercase SHA-256 hash.
+
+=head2 extension
+
+Returns the extension without a leading dot.
+
+=head2 xs
+
+Returns the server hint array reference.
+
+=head2 as
+
+Returns the author hint array reference.
+
+=head2 sz
+
+Returns the optional byte size.
+
+=head1 METHODS
+
+=head2 to_string
+
+    my $value = $uri->to_string;
+
+Returns the C<blossom:> URI string. Query parameters are emitted in C<xs>,
+C<as>, then C<sz> order.
+
+=cut

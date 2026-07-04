@@ -48,3 +48,81 @@ sub _validate_status {
 }
 
 1;
+
+=pod
+
+=head1 NAME
+
+Net::Blossom::Error - Blossom HTTP error object
+
+=head1 SYNOPSIS
+
+    my $error = eval { $client->get_blob($sha256); 1 } ? undef : $@;
+
+    if (ref($error) && $error->isa('Net::Blossom::Error')) {
+        warn $error->status;
+        warn "$error";
+    }
+
+=head1 DESCRIPTION
+
+C<Net::Blossom::Error> represents a non-success HTTP response from a Blossom
+server. C<Net::Blossom::Client> dies with this object for non-402 HTTP failures.
+
+The object stringifies to a compact diagnostic containing status, reason,
+optional C<X-Reason>, method, and URL.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $error = Net::Blossom::Error->new(%args);
+
+Required arguments are C<method>, C<url>, C<status>, and C<reason>. C<status>
+must be a three-digit HTTP status code from C<100> through C<599>.
+
+Optional C<x_reason> is the server's C<X-Reason> diagnostic. Optional C<headers>
+defaults to an empty hash reference. Optional C<body> defaults to the empty
+string.
+
+Unknown arguments or invalid values croak.
+
+=head1 ACCESSORS
+
+=head2 method
+
+Returns the HTTP method.
+
+=head2 url
+
+Returns the request URL.
+
+=head2 status
+
+Returns the HTTP status code.
+
+=head2 reason
+
+Returns the HTTP reason phrase.
+
+=head2 x_reason
+
+Returns the optional C<X-Reason> diagnostic.
+
+=head2 headers
+
+Returns the response headers hash reference.
+
+=head2 body
+
+Returns the response body.
+
+=head1 METHODS
+
+=head2 as_string
+
+    my $message = $error->as_string;
+
+Returns the same diagnostic used by stringification.
+
+=cut

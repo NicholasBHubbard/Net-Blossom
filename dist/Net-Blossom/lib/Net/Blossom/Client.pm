@@ -716,3 +716,262 @@ sub _uri_escape {
 }
 
 1;
+
+=pod
+
+=head1 NAME
+
+Net::Blossom::Client - HTTP client for Blossom servers
+
+=head1 SYNOPSIS
+
+    use Net::Blossom::Client;
+
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        auth   => sub {
+            my %ctx = @_;
+            return build_authorization_header(%ctx);
+        },
+    );
+
+    my $response = $client->get_blob($sha256);
+    my $blob     = $client->upload_blob($bytes, type => 'image/png');
+    my $blobs    = $client->list_blobs($pubkey, limit => 20);
+
+=head1 DESCRIPTION
+
+C<Net::Blossom::Client> sends HTTP requests to one Blossom server. It implements
+client support for the currently supported Blossom BUDs in this distribution,
+including blob get/head/upload/delete, mirror requests, media processing,
+upload/media preflights, blob reports, payment challenge handling, server-list
+fallback helpers, and list pagination.
+
+Methods croak for invalid local arguments. Non-success HTTP responses die with
+C<Net::Blossom::Error>. C<402 Payment Required> responses die with
+C<Net::Blossom::PaymentRequired>.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $client = Net::Blossom::Client->new(%args);
+
+Required arguments:
+
+=over 4
+
+=item * C<server>
+
+The Blossom server base URL. Trailing slashes are removed.
+
+=back
+
+Optional arguments:
+
+=over 4
+
+=item * C<ua>
+
+HTTP user agent object. Defaults to C<HTTP::Tiny-E<gt>new>. The object must
+provide C<request($method, $url, \%opts)> and return a hash reference with
+C<status>, C<reason>, C<headers>, and C<content>.
+
+=item * C<auth>
+
+Authorization provider. It may be a static C<Authorization> header string, a
+code reference, or an object with C<authorization_header(%context)>.
+
+Code references and objects receive C<method>, C<url>, C<action>, and C<sha256>.
+They must return the header value or C<undef> to omit authorization.
+
+=back
+
+Unknown arguments or a missing C<server> croak.
+
+=head1 ACCESSORS
+
+=head2 server
+
+Returns the normalized server base URL.
+
+=head2 ua
+
+Returns the user agent object.
+
+=head2 auth
+
+Returns the configured authorization provider.
+
+=head1 METHODS
+
+=head2 get_blob
+
+    my $response = $client->get_blob($sha256, %opts);
+
+Sends C<GET /<sha256>> and returns a C<Net::Blossom::Response>. Success statuses
+are C<200>, C<206>, C<307>, and C<308>.
+
+Options:
+
+=over 4
+
+=item * C<extension>
+
+Appends C<.$extension> to the request path. The extension must contain only
+letters and digits.
+
+=item * C<range>
+
+Sends a C<Range> header.
+
+=item * C<payment>
+
+Hash reference of payment proof headers. See L</Payment Proofs>.
+
+=back
+
+=head2 head_blob
+
+    my $response = $client->head_blob($sha256, %opts);
+
+Sends C<HEAD /<sha256>> and returns a C<Net::Blossom::Response>. Success
+statuses are C<200>, C<307>, and C<308>. Accepts the C<extension> option.
+C<payment> is rejected because proof headers are not allowed on C<HEAD>
+requests.
+
+=head2 upload_blob
+
+    my $descriptor = $client->upload_blob($content, %opts);
+
+Sends C<PUT /upload> with the exact byte string in C<$content>. Returns a
+C<Net::Blossom::BlobDescriptor> parsed from the JSON response. Success statuses
+are C<200> and C<201>.
+
+Options:
+
+=over 4
+
+=item * C<type>
+
+Media type for C<Content-Type>. Defaults to C<application/octet-stream>.
+
+=item * C<payment>
+
+Hash reference of payment proof headers. See L</Payment Proofs>.
+
+=back
+
+=head2 head_upload
+
+    my $response = $client->head_upload($content, %opts);
+
+Sends C<HEAD /upload> preflight headers for the given content and returns a
+C<Net::Blossom::Response>. Success status is C<200>. C<payment> is not allowed
+on C<HEAD> requests.
+
+The C<type> option sets C<X-Content-Type> and defaults to
+C<application/octet-stream>.
+
+=head2 process_media
+
+    my $descriptor = $client->process_media($content, %opts);
+
+Sends C<PUT /media> and returns a C<Net::Blossom::BlobDescriptor>. Success
+statuses are C<200> and C<201>. Options match C<upload_blob>.
+
+=head2 head_media
+
+    my $response = $client->head_media($content, %opts);
+
+Sends C<HEAD /media> preflight headers and returns a
+C<Net::Blossom::Response>. Success status is C<200>. C<payment> is not allowed
+on C<HEAD> requests.
+
+The C<type> option sets C<X-Content-Type> and defaults to
+C<application/octet-stream>.
+
+=head2 upload_blob_to_servers
+
+    my $descriptor = $client->upload_blob_to_servers($content, $servers, %opts);
+
+Uploads to the first server in C<$servers>. C<$servers> may be a
+C<Net::Blossom::ServerList> or an array reference of server base URLs. Options
+are passed to C<upload_blob>.
+
+=head2 mirror_blob
+
+    my $descriptor = $client->mirror_blob($url, %opts);
+
+Sends C<PUT /mirror> with a canonical JSON body containing C<url>. Returns a
+C<Net::Blossom::BlobDescriptor>. Success statuses are C<200> and C<201>.
+
+If the source URL contains a SHA-256 hash, that hash is passed to the auth
+provider as request context.
+
+=head2 report_blob
+
+    my $response = $client->report_blob($event, %opts);
+
+Sends C<PUT /report> with a NIP-56 report event hash reference. Returns a
+C<Net::Blossom::Response>. Any C<2xx> status is treated as success.
+
+The report event is validated locally. It must be kind C<1984>, include
+lowercase hex C<id>, C<pubkey>, and C<sig> fields, include scalar C<content>,
+include a non-negative integer C<created_at>, and contain at least one C<x> tag
+with a lowercase SHA-256 hash.
+
+=head2 list_blobs
+
+    my $descriptors = $client->list_blobs($pubkey, %opts);
+
+Sends C<GET /list/<pubkey>> and returns an array reference of
+C<Net::Blossom::BlobDescriptor> objects. C<$pubkey> must be lowercase
+64-character hex.
+
+Options C<cursor>, C<limit>, C<since>, and C<until> are sent as query
+parameters when defined.
+
+=head2 delete_blob
+
+    my $response = $client->delete_blob($sha256, %opts);
+
+Sends C<DELETE /<sha256>> and returns a C<Net::Blossom::Response>. Success
+statuses are C<200> and C<204>. Accepts the C<payment> option.
+
+=head2 get_blob_from_servers
+
+    my $response = $client->get_blob_from_servers($url, $servers, %opts);
+
+Extracts the last SHA-256 hash from C<$url> and tries C<get_blob> against each
+server in order until one succeeds. C<$servers> may be a
+C<Net::Blossom::ServerList> or an array reference of server base URLs.
+
+If all servers return Blossom HTTP errors, the last C<Net::Blossom::Error> is
+re-thrown. Non-Blossom exceptions are re-thrown immediately.
+
+=head1 PAYMENT PROOFS
+
+C<GET>, C<PUT>, and C<DELETE> methods accept C<payment =E<gt> \%proofs>. Keys
+are payment method names such as C<cashu> or C<lightning>, optionally with an
+C<X-> prefix. Values are scalar proof strings. The client sends them as
+C<X-Cashu>, C<X-Lightning>, or the matching C<X-*> header.
+
+Reserved payment method names C<reason>, C<sha-256>, C<content-type>, and
+C<content-length> are rejected.
+
+=head1 ERRORS
+
+Invalid local arguments croak. Failed HTTP responses die with
+C<Net::Blossom::Error>. Payment challenges die with
+C<Net::Blossom::PaymentRequired>.
+
+Malformed JSON success bodies also croak.
+
+=head1 SEE ALSO
+
+L<Net::Blossom::AuthToken>, L<Net::Blossom::BlobDescriptor>,
+L<Net::Blossom::Error>, L<Net::Blossom::PaymentRequired>,
+L<Net::Blossom::Response>, L<Net::Blossom::ServerList>
+
+=cut
