@@ -10,6 +10,7 @@ use Test::More ();
 
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::Server;
+use Net::Blossom::Server::BlobResult;
 use Net::Blossom::Server::Storage;
 use Net::Blossom::Server::UploadResult;
 
@@ -54,7 +55,7 @@ sub _committed_uploads_are_visible {
     _is_upload_result($result, 1, 'new upload result');
     my $blob = $result->descriptor;
     _is_descriptor($blob, $sha256, length($body), 'text/plain', 1725105921, 'upload descriptor');
-    _is_descriptor($storage->get_blob($sha256), $sha256, length($body), 'text/plain', 1725105921, 'get_blob descriptor');
+    _is_blob_result($storage->get_blob($sha256), $sha256, length($body), 'text/plain', 1725105921, $body, 'get_blob result');
 
     my $second = _upload($storage, "contract blob two\n", 1725105922);
     my $listed = $storage->list_blobs($PUBKEY);
@@ -114,7 +115,7 @@ sub _delete_is_pubkey_scoped {
     _is_upload_result($second, 0, 'second shared upload result');
     Test::More::is($second->descriptor->sha256, $sha256, 'same bytes produce same hash for another pubkey');
     Test::More::ok($storage->delete_blob($sha256, pubkey => $PUBKEY), 'delete_blob removes one owner');
-    Test::More::isa_ok($storage->get_blob($sha256), 'Net::Blossom::BlobDescriptor', 'shared blob remains retrievable');
+    Test::More::isa_ok($storage->get_blob($sha256), 'Net::Blossom::Server::BlobResult', 'shared blob remains retrievable');
     _is_descriptor_list($storage->list_blobs($PUBKEY), [], 'deleted owner no longer lists shared blob');
     _is_descriptor_list($storage->list_blobs($OTHER_PUBKEY), [$sha256], 'other owner still lists shared blob');
     Test::More::ok($storage->delete_blob($sha256, pubkey => $OTHER_PUBKEY), 'delete_blob removes final owner');
@@ -156,6 +157,14 @@ sub _is_upload_result {
     return unless blessed($result) && $result->isa('Net::Blossom::Server::UploadResult');
     Test::More::isa_ok($result->descriptor, 'Net::Blossom::BlobDescriptor', "$name descriptor");
     Test::More::is($result->created, $created, "$name created");
+}
+
+sub _is_blob_result {
+    my ($result, $sha256, $size, $type, $uploaded, $body, $name) = @_;
+    Test::More::isa_ok($result, 'Net::Blossom::Server::BlobResult', $name);
+    return unless blessed($result) && $result->isa('Net::Blossom::Server::BlobResult');
+    _is_descriptor($result->descriptor, $sha256, $size, $type, $uploaded, "$name descriptor");
+    Test::More::is($result->body, $body, "$name body");
 }
 
 sub _is_descriptor_list {

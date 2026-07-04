@@ -12,6 +12,7 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
     use strictures 2;
 
     use Net::Blossom::BlobDescriptor;
+    use Net::Blossom::Server::BlobResult;
 
     sub new {
         my ($class) = @_;
@@ -28,7 +29,12 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
 
     sub get_blob {
         my ($self, $sha256) = @_;
-        return $self->{blobs}{$sha256};
+        my $entry = $self->{blobs}{$sha256};
+        return unless defined $entry;
+        return Net::Blossom::Server::BlobResult->new(
+            descriptor => $entry->{descriptor},
+            body       => $entry->{body},
+        );
     }
 
     sub delete_blob {
@@ -60,7 +66,7 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
         my @sha256 = keys %{$self->{owners}{$pubkey} || {}};
         my @blobs = sort {
             $b->uploaded <=> $a->uploaded || $a->sha256 cmp $b->sha256
-        } grep { defined } map { $self->{blobs}{$_} } @sha256;
+        } grep { defined } map { $self->{blobs}{$_}{descriptor} } @sha256;
 
         if (defined $opts{cursor}) {
             while (@blobs && $blobs[0]->sha256 ne $opts{cursor}) {
@@ -98,6 +104,7 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
 
     sub commit {
         my ($self, %metadata) = @_;
+        my $body = join '', @{$self->{chunks}};
         my $created = exists $self->{storage}{blobs}{$metadata{sha256}} ? 0 : 1;
         my $descriptor = Net::Blossom::BlobDescriptor->new(
             url      => "https://cdn.example.com/$metadata{sha256}.bin",
@@ -107,7 +114,10 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
             uploaded => $metadata{uploaded},
         );
 
-        $self->{storage}{blobs}{$metadata{sha256}} = $descriptor;
+        $self->{storage}{blobs}{$metadata{sha256}} = {
+            descriptor => $descriptor,
+            body       => $body,
+        };
         $self->{storage}{owners}{$metadata{pubkey}}{$metadata{sha256}} = 1
             if defined $metadata{pubkey};
 

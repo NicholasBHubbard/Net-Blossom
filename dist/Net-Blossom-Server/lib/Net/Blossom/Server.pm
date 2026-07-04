@@ -5,6 +5,7 @@ use strictures 2;
 use Net::Blossom ();
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::_ConstructorArgs ();
+use Net::Blossom::Server::BlobResult;
 use Net::Blossom::Server::Request;
 use Net::Blossom::Server::Response;
 use Net::Blossom::Server::Storage;
@@ -139,14 +140,41 @@ sub handle_get_blob {
     croak "blob request method must be GET" unless $request->method eq 'GET';
 
     my $sha256 = _sha256_from_blob_path($request->path);
-    my $descriptor = $self->storage->get_blob($sha256);
-    return Net::Blossom::Server::Response->empty(404) unless defined $descriptor;
+    my $result = $self->storage->get_blob($sha256);
+    return Net::Blossom::Server::Response->empty(404) unless defined $result;
 
-    croak "storage get_blob must return a Net::Blossom::BlobDescriptor"
-        unless blessed($descriptor) && $descriptor->isa('Net::Blossom::BlobDescriptor');
+    croak "storage get_blob must return a Net::Blossom::Server::BlobResult"
+        unless blessed($result) && $result->isa('Net::Blossom::Server::BlobResult');
+    my $descriptor = $result->descriptor;
     croak "storage returned descriptor sha256 mismatch" unless $descriptor->sha256 eq $sha256;
 
-    return Net::Blossom::Server::Response->json($descriptor->to_hash, status => 200);
+    return Net::Blossom::Server::Response->new(
+        status  => 200,
+        headers => {
+            'Content-Type'   => $descriptor->type,
+            'Content-Length' => $descriptor->size,
+        },
+        body    => $result->body,
+    );
+}
+
+sub handle_delete_blob {
+    my $self = shift;
+    my ($request, %opts) = @_;
+    my %known = map { $_ => 1 } qw(pubkey);
+    my @unknown = grep { !exists $known{$_} } keys %opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
+
+    croak "request must be a Net::Blossom::Server::Request"
+        unless blessed($request) && $request->isa('Net::Blossom::Server::Request');
+    croak "delete request method must be DELETE" unless $request->method eq 'DELETE';
+    croak "pubkey is required" unless defined $opts{pubkey};
+    _validate_pubkey($opts{pubkey});
+
+    my $sha256 = _sha256_from_blob_path($request->path);
+    my $deleted = $self->storage->delete_blob($sha256, pubkey => $opts{pubkey});
+    return Net::Blossom::Server::Response->empty(404) unless $deleted;
+    return Net::Blossom::Server::Response->empty(204);
 }
 
 sub handle_request {
@@ -166,9 +194,13 @@ sub handle_request {
     }
 
     if ($request->path =~ m{\A/[0-9a-f]{64}\z}) {
-        return Net::Blossom::Server::Response->empty(405, headers => { Allow => 'GET' })
-            unless $request->method eq 'GET';
-        return $self->handle_get_blob($request);
+        if ($request->method eq 'GET') {
+            return $self->handle_get_blob($request);
+        }
+        if ($request->method eq 'DELETE') {
+            return $self->handle_delete_blob($request, %opts);
+        }
+        return Net::Blossom::Server::Response->empty(405, headers => { Allow => 'DELETE, GET' });
     }
 
     return Net::Blossom::Server::Response->empty(404);
@@ -435,8 +467,25 @@ C<Net::Blossom::Server::Response>. The request path must contain one lowercase
 
 The method calls C<< $server->storage->get_blob($sha256) >>. It returns C<404>
 when storage returns C<undef>. Otherwise, storage must return a
-C<Net::Blossom::BlobDescriptor> whose C<sha256> matches the request path, and
-the response body is that descriptor encoded as JSON with status C<200>.
+C<Net::Blossom::Server::BlobResult> whose descriptor C<sha256> matches the
+request path. The response status is C<200>, the response body is the blob body,
+and C<Content-Type> and C<Content-Length> come from the descriptor.
+
+=head2 handle_delete_blob
+
+    my $response = $server->handle_delete_blob($request, pubkey => $pubkey);
+
+Handles a normalized C<DELETE /E<lt>sha256E<gt>> request and returns a
+C<Net::Blossom::Server::Response>. The request path must contain one lowercase
+64-character SHA-256 hash segment.
+
+C<pubkey> is required and must be the already-verified owner public key as
+lowercase 64-character hex. Authorization event verification is deliberately
+outside this method.
+
+The method calls C<< $server->storage->delete_blob($sha256, pubkey => $pubkey) >>.
+It returns C<204> when storage deletes an owner relationship and C<404> when
+storage returns false.
 
 =head2 handle_request
 
@@ -458,6 +507,10 @@ Delegates to C<handle_upload>.
 
 Delegates to C<handle_get_blob>.
 
+=item * C<DELETE /E<lt>sha256E<gt>>
+
+Delegates to C<handle_delete_blob>.
+
 =back
 
 Unknown paths return C<404>. Known paths with unsupported methods return C<405>.
@@ -469,7 +522,7 @@ Options:
 =item * C<pubkey>
 
 Optional already-verified uploader public key. Passed through to C<handle_upload>
-for upload requests.
+for upload requests and required for delete requests.
 
 =back
 

@@ -82,11 +82,12 @@ The upload writer must provide C<write>, C<commit>, and C<abort>.
 
 =head2 get_blob
 
-    my $blob = $storage->get_blob($sha256, %opts);
+    my $result = $storage->get_blob($sha256, %opts);
 
-Returns a C<Net::Blossom::BlobDescriptor> for an available blob, or C<undef>
-when the blob is not available. The body streaming contract will be added when
-download endpoint handling is implemented.
+Returns a C<Net::Blossom::Server::BlobResult> for an available blob, or
+C<undef> when the blob is not available. The result contains both the
+C<Net::Blossom::BlobDescriptor> and the blob body as a scalar, an array
+reference of scalar chunks, or a stream object with C<read> or C<getline>.
 
 =head2 delete_blob
 

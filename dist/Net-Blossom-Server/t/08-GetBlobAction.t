@@ -1,14 +1,12 @@
 use strictures 2;
 
 use Test::More;
-use JSON ();
-
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::Server;
+use Net::Blossom::Server::BlobResult;
 use Net::Blossom::Server::Request;
 
 my $SHA256 = '0f343b0931126a20f133d67c2b018a3b5ceca63dd3585a76cb1f3289a274707f';
-my $JSON = JSON->new->utf8->canonical;
 
 sub dies(&) {
     my ($code) = @_;
@@ -71,6 +69,24 @@ sub dies(&) {
     }
 }
 
+{
+    package Local::ReadStream;
+    use strictures 2;
+
+    sub new {
+        my ($class, $data) = @_;
+        return bless { data => $data, offset => 0 }, $class;
+    }
+
+    sub read {
+        my ($self, undef, $length) = @_;
+        return 0 if $self->{offset} >= length $self->{data};
+        $_[1] = substr($self->{data}, $self->{offset}, $length);
+        $self->{offset} += length $_[1];
+        return length $_[1];
+    }
+}
+
 sub request {
     my (%args) = @_;
     return Net::Blossom::Server::Request->new(
@@ -80,28 +96,58 @@ sub request {
 }
 
 sub descriptor {
+    my (%args) = @_;
+    my $body = exists $args{body} ? $args{body} : 'hello body';
     return Net::Blossom::BlobDescriptor->new(
         url      => "https://cdn.example.com/$SHA256",
         sha256   => $SHA256,
-        size     => 12,
+        size     => exists $args{size} ? $args{size} : length($body),
         type     => 'text/plain',
         uploaded => 1725105921,
         extra    => { alt => 'https://mirror.example.com/blob' },
     );
 }
 
-subtest 'handle_get_blob returns descriptor JSON' => sub {
-    my $descriptor = descriptor();
-    my $storage = Local::Storage->new(blobs => { $SHA256 => $descriptor });
+sub blob_result {
+    my (%args) = @_;
+    my $body = exists $args{body} ? $args{body} : 'hello body';
+    return Net::Blossom::Server::BlobResult->new(
+        descriptor => $args{descriptor} || descriptor(body => $body),
+        body       => $body,
+    );
+}
+
+subtest 'handle_get_blob returns blob body response' => sub {
+    my $body = 'hello body';
+    my $storage = Local::Storage->new(blobs => { $SHA256 => blob_result(body => $body) });
     my $server = Net::Blossom::Server->new(storage => $storage);
 
     my $response = $server->handle_get_blob(request(method => 'GET', path => "/$SHA256"));
 
     isa_ok($response, 'Net::Blossom::Server::Response');
-    is($response->status, 200, 'descriptor status');
-    is($response->header('content-type'), 'application/json', 'json content type');
-    is_deeply($JSON->decode($response->body), $descriptor->to_hash, 'descriptor body');
+    is($response->status, 200, 'blob status');
+    is($response->header('content-type'), 'text/plain', 'blob content type');
+    is($response->header('content-length'), length($body), 'blob content length');
+    is($response->body, $body, 'blob body');
     is($storage->last_get_blob, $SHA256, 'sha256 passed to storage');
+};
+
+subtest 'handle_get_blob returns stream bodies without flattening' => sub {
+    my $stream = Local::ReadStream->new('hello body');
+    my $storage = Local::Storage->new(blobs => {
+        $SHA256 => blob_result(
+            descriptor => descriptor(size => 10),
+            body       => $stream,
+        ),
+    });
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $response = $server->handle_get_blob(request(method => 'GET', path => "/$SHA256"));
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 200, 'stream status');
+    is($response->header('content-length'), 10, 'stream content length from descriptor');
+    is($response->body, $stream, 'stream body preserved');
 };
 
 subtest 'handle_get_blob returns 404 when storage has no descriptor' => sub {
@@ -137,8 +183,8 @@ subtest 'handle_get_blob rejects invalid storage descriptors' => sub {
     my $server = Net::Blossom::Server->new(storage => $storage);
 
     like(dies { $server->handle_get_blob(request(method => 'GET', path => "/$SHA256")) },
-        qr/storage get_blob must return a Net::Blossom::BlobDescriptor/,
-        'storage descriptor class required');
+        qr/storage get_blob must return a Net::Blossom::Server::BlobResult/,
+        'storage result class required');
 
     my $other = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
     my $bad_descriptor = Net::Blossom::BlobDescriptor->new(
@@ -148,7 +194,12 @@ subtest 'handle_get_blob rejects invalid storage descriptors' => sub {
         type     => 'text/plain',
         uploaded => 1725105921,
     );
-    $storage = Local::Storage->new(blobs => { $SHA256 => $bad_descriptor });
+    $storage = Local::Storage->new(blobs => {
+        $SHA256 => Net::Blossom::Server::BlobResult->new(
+            descriptor => $bad_descriptor,
+            body       => 'hello body!!',
+        ),
+    });
     $server = Net::Blossom::Server->new(storage => $storage);
 
     like(dies { $server->handle_get_blob(request(method => 'GET', path => "/$SHA256")) },

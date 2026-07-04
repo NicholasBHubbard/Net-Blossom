@@ -6,6 +6,7 @@ use JSON ();
 
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::Server;
+use Net::Blossom::Server::BlobResult;
 use Net::Blossom::Server::Request;
 
 my $PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
@@ -41,7 +42,9 @@ sub dies(&) {
     }
 
     sub delete_blob {
-        return 0;
+        my ($self, $sha256, %opts) = @_;
+        $self->{last_delete_blob} = [$sha256, \%opts];
+        return 1;
     }
 
     sub list_blobs {
@@ -137,22 +140,45 @@ subtest 'handle_request dispatches PUT /upload' => sub {
 };
 
 subtest 'handle_request dispatches GET /<sha256>' => sub {
+    my $body = 'dispatch body';
     my $descriptor = Net::Blossom::BlobDescriptor->new(
         url      => "https://cdn.example.com/$SHA256",
         sha256   => $SHA256,
-        size     => 12,
+        size     => length($body),
         type     => 'text/plain',
         uploaded => 1725105921,
     );
-    my $storage = Local::Storage->new(blobs => { $SHA256 => $descriptor });
+    my $storage = Local::Storage->new(blobs => {
+        $SHA256 => Net::Blossom::Server::BlobResult->new(
+            descriptor => $descriptor,
+            body       => $body,
+        ),
+    });
     my $server = Net::Blossom::Server->new(storage => $storage);
 
     my $response = $server->handle_request(request(method => 'GET', path => "/$SHA256"));
 
     isa_ok($response, 'Net::Blossom::Server::Response');
     is($response->status, 200, 'get blob status');
-    is_deeply($JSON->decode($response->body), $descriptor->to_hash, 'get blob descriptor response');
+    is($response->header('content-type'), 'text/plain', 'get blob content type');
+    is($response->header('content-length'), length($body), 'get blob content length');
+    is($response->body, $body, 'get blob body');
     is($storage->last_get_blob, $SHA256, 'sha256 passed to storage');
+};
+
+subtest 'handle_request dispatches DELETE /<sha256>' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my $response = $server->handle_request(
+        request(method => 'DELETE', path => "/$SHA256"),
+        pubkey => $PUBKEY,
+    );
+
+    isa_ok($response, 'Net::Blossom::Server::Response');
+    is($response->status, 204, 'delete blob status');
+    is($response->body, '', 'delete blob body');
+    is_deeply($storage->{last_delete_blob}, [$SHA256, { pubkey => $PUBKEY }], 'delete passed to storage');
 };
 
 subtest 'handle_request returns 404 for unknown paths' => sub {
@@ -196,7 +222,7 @@ subtest 'handle_request returns 405 for unsupported blob methods' => sub {
 
     isa_ok($response, 'Net::Blossom::Server::Response');
     is($response->status, 405, 'unsupported method status');
-    is($response->header('allow'), 'GET', 'allow header');
+    is($response->header('allow'), 'DELETE, GET', 'allow header');
     is($response->body, '', 'unsupported method body');
 };
 
