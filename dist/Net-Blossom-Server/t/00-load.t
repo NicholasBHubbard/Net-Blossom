@@ -8,5 +8,8 @@ use_ok('Net::Blossom::Server::Response');
 use_ok('Net::Blossom::Server::Storage');
 use_ok('Net::Blossom::Server::BlobResult');
 use_ok('Net::Blossom::Server::UploadResult');
+use_ok('Net::Blossom::Server::PSGI');
+use_ok('Net::Blossom::Server::Error');
+use_ok('Net::Blossom::Server::Authorization');
 
 done_testing;
