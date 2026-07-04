@@ -43,7 +43,7 @@ sub new {
     }
     for my $server (@servers) {
         croak "server must be a lowercase domain name"
-            unless defined $server && !ref($server) && $server =~ /\A[a-z0-9.-]+\z/;
+            unless defined $server && !ref($server) && _valid_server_domain($server);
     }
     $args{servers} = \@servers;
 
@@ -90,6 +90,12 @@ sub authorization_header {
     $b64 =~ tr{+/}{-_};
     $b64 =~ s/=+\z//;
     return "Nostr $b64";
+}
+
+sub _valid_server_domain {
+    my ($server) = @_;
+    return length($server) <= 253
+        && $server =~ /\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/;
 }
 
 1;
@@ -158,11 +164,12 @@ Optional arguments:
 
 =item * C<server>
 
-A lowercase domain name for one server scope. This is a domain only, not a URL.
+A lowercase DNS-style domain name for one server scope. This is a domain only,
+not a URL. Empty labels and leading or trailing label hyphens are rejected.
 
 =item * C<servers>
 
-Array reference of lowercase domain names for server scope.
+Array reference of lowercase DNS-style domain names for server scope.
 
 =item * C<hashes>
 

@@ -8,6 +8,7 @@ use Net::Blossom::Error;
 use Net::Blossom::PaymentRequired;
 use Net::Blossom::Response;
 use Net::Blossom::ServerList;
+use Net::Blossom::_URL ();
 
 use Carp qw(croak);
 use Class::Tiny qw(server ua auth);
@@ -34,6 +35,8 @@ sub new {
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
     croak "server is required" unless defined $args{server} && length $args{server};
+    croak "server must be an http(s) base URL" if ref($args{server});
+    croak "server must be an http(s) base URL" unless _valid_server_url($args{server});
 
     $args{server} =~ s{/+\z}{};
     $args{ua} = HTTP::Tiny->new unless defined $args{ua};
@@ -715,6 +718,11 @@ sub _uri_escape {
     return $value;
 }
 
+sub _valid_server_url {
+    my ($server) = @_;
+    return Net::Blossom::_URL::http_base_url($server);
+}
+
 1;
 
 =pod
@@ -763,7 +771,8 @@ Required arguments:
 
 =item * C<server>
 
-The Blossom server base URL. Trailing slashes are removed.
+The Blossom server HTTP or HTTPS base URL. Query strings, fragments, and userinfo
+are rejected. A path prefix is allowed. Trailing slashes are removed.
 
 =back
 

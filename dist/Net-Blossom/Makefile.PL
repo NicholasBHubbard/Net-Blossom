@@ -18,6 +18,7 @@ WriteMakefile(
         'JSON'              => '0',
         'Net::Nostr::Core'  => '0',
         'strictures'        => '2',
+        'URI'               => '0',
     },
     test             => {
         TESTS => 't/*.t t/bud/*.t',

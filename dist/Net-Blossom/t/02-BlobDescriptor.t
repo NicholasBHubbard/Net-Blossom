@@ -57,6 +57,19 @@ subtest 'extra descriptor fields are preserved' => sub {
     is($hash->{magnet}, 'magnet:?xt=urn:btih:abc', 'to_hash preserves second extra field');
 };
 
+subtest 'extra descriptor fields cannot shadow standard fields' => sub {
+    like(dies {
+        Net::Blossom::BlobDescriptor->new(
+            url      => "https://cdn.example.com/$HASH.pdf",
+            sha256   => $HASH,
+            size     => 184292,
+            type     => 'application/pdf',
+            uploaded => 1725105921,
+            extra    => { url => 'https://bad.example/blob' },
+        );
+    }, qr/extra must not contain standard descriptor field url/, 'standard extra key rejected');
+};
+
 subtest 'nip94 descriptor field is exposed and preserved' => sub {
     my $descriptor = Net::Blossom::BlobDescriptor->from_hash({
         url      => "https://cdn.example.com/$HASH.pdf",
@@ -117,6 +130,20 @@ subtest 'field formats are validated' => sub {
             nip94 => {},
         });
     }, qr/nip94 must be an array reference/, 'bad nip94 rejected');
+
+    like(dies {
+        Net::Blossom::BlobDescriptor->from_hash({
+            url => [], sha256 => $HASH,
+            size => 1, type => 'application/pdf', uploaded => 1,
+        });
+    }, qr/url must be a scalar/, 'url reference rejected');
+
+    like(dies {
+        Net::Blossom::BlobDescriptor->from_hash({
+            url => "https://cdn.example.com/$HASH.pdf", sha256 => $HASH,
+            size => 1, type => {}, uploaded => 1,
+        });
+    }, qr/type must be a scalar/, 'type reference rejected');
 };
 
 done_testing;

@@ -129,6 +129,17 @@ subtest 'constructor trims trailing server slash' => sub {
     is($client->server, 'https://cdn.example.com', 'server normalized');
 };
 
+subtest 'constructor validates server base URL' => sub {
+    like(dies { Net::Blossom::Client->new(server => []) },
+        qr/server must be an http\(s\) base URL/, 'server reference rejected');
+    like(dies { Net::Blossom::Client->new(server => 'cdn.example.com') },
+        qr/server must be an http\(s\) base URL/, 'server without scheme rejected');
+    like(dies { Net::Blossom::Client->new(server => 'ftp://cdn.example.com') },
+        qr/server must be an http\(s\) base URL/, 'non-http scheme rejected');
+    like(dies { Net::Blossom::Client->new(server => 'https://cdn.example.com?bad=1') },
+        qr/server must be an http\(s\) base URL/, 'query string rejected');
+};
+
 subtest 'GET /<sha256> returns blob response' => sub {
     my $ua = Local::UA->new({
         status  => 200,

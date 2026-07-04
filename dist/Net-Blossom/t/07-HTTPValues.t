@@ -99,6 +99,8 @@ subtest 'PaymentRequired validates HTTP fields and payment challenges' => sub {
 
     like(dies { Net::Blossom::PaymentRequired->new(valid_error_args(), status => 402, reason => 'Payment Required', payment_challenges => []) },
         qr/payment_challenges must be a hash reference/, 'payment challenges hashref required');
+    like(dies { Net::Blossom::PaymentRequired->new(valid_error_args()) },
+        qr/status must be 402 for PaymentRequired/, 'non-402 status rejected');
 };
 
 done_testing;

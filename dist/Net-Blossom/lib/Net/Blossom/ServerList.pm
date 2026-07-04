@@ -3,6 +3,7 @@ package Net::Blossom::ServerList;
 use strictures 2;
 
 use Net::Blossom::_ConstructorArgs ();
+use Net::Blossom::_URL ();
 
 use Carp qw(croak);
 use Class::Tiny qw(_servers);
@@ -127,7 +128,7 @@ sub _event_field {
 
 sub _valid_server_url {
     my ($server) = @_;
-    return $server =~ m{\Ahttps?://[^\s/?#@]+(?:/[^\s?#]*)?\z};
+    return Net::Blossom::_URL::http_base_url($server);
 }
 
 1;

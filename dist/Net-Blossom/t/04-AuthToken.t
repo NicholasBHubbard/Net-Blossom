@@ -141,6 +141,14 @@ subtest 'validates BUD-11 token inputs' => sub {
         qr/expiration.*future/, 'expired token rejected');
     like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => $FUTURE, server => 'https://cdn.example.com') },
         qr/server.*domain/, 'server URL rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, server => '.') },
+        qr/server.*domain/, 'bare dot server rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, server => 'bad..example') },
+        qr/server.*domain/, 'empty domain label rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, server => '-bad.example') },
+        qr/server.*domain/, 'leading label hyphen rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, server => 'bad-.example') },
+        qr/server.*domain/, 'trailing label hyphen rejected');
     like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, servers => 'cdn.example.com') },
         qr/servers.*array reference/, 'servers arrayref required');
     like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, servers => ['https://cdn.example.com']) },

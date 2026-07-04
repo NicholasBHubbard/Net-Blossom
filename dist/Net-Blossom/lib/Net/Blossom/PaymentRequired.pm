@@ -24,6 +24,7 @@ sub new {
 
     my $payment_challenges = delete $args{payment_challenges};
     my $self = $class->SUPER::new(%args);
+    croak "status must be 402 for PaymentRequired" unless $self->status == 402;
     $self->{payment_challenges} = $payment_challenges;
     return $self;
 }
@@ -73,9 +74,9 @@ payment methods are preserved when they have a scalar non-empty payload.
 
     my $error = Net::Blossom::PaymentRequired->new(%args);
 
-Accepts the same required arguments as C<Net::Blossom::Error-E<gt>new>. Optional
-C<payment_challenges> must be a hash reference and defaults to an empty hash
-reference.
+Accepts the same required arguments as C<Net::Blossom::Error-E<gt>new>, but
+C<status> must be C<402>. Optional C<payment_challenges> must be a hash reference
+and defaults to an empty hash reference.
 
 =head1 ACCESSORS
 

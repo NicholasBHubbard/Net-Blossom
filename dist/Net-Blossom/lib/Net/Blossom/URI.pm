@@ -3,6 +3,7 @@ package Net::Blossom::URI;
 use strictures 2;
 
 use Net::Blossom::_ConstructorArgs ();
+use Net::Blossom::_URL ();
 
 use Carp qw(croak);
 use Class::Tiny qw(sha256 extension xs as sz);
@@ -114,7 +115,8 @@ sub _parse_path {
 
 sub _valid_server_hint {
     my ($server) = @_;
-    return $server =~ m{\A(?:https?://)?[A-Za-z0-9][A-Za-z0-9.-]*(?::[1-9][0-9]*)?\z};
+    return Net::Blossom::_URL::http_root_url($server) if $server =~ m{\Ahttps?://}i;
+    return $server =~ m{\A[A-Za-z0-9][A-Za-z0-9.-]*(?::[1-9][0-9]*)?\z};
 }
 
 sub _pct_decode {

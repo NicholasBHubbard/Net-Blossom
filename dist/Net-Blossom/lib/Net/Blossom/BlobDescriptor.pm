@@ -8,6 +8,7 @@ use Carp qw(croak);
 use Class::Tiny qw(url sha256 size type uploaded nip94 extra);
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
+my %STANDARD_FIELD = map { $_ => 1 } qw(url sha256 size type uploaded nip94);
 
 sub new {
     my $class = shift;
@@ -18,6 +19,7 @@ sub new {
 
     for my $field (qw(url sha256 size type uploaded)) {
         croak "$field is required" unless defined $args{$field};
+        croak "$field must be a scalar" if ref($args{$field});
     }
     croak "url is required" unless length $args{url};
     croak "sha256 must be 64-char lowercase hex" unless $args{sha256} =~ $HEX64;
@@ -29,6 +31,9 @@ sub new {
     _validate_nip94($args{nip94}) if exists $args{nip94};
     croak "extra must be a hash reference"
         if defined $args{extra} && ref($args{extra}) ne 'HASH';
+    for my $field (sort keys %{$args{extra} || {}}) {
+        croak "extra must not contain standard descriptor field $field" if $STANDARD_FIELD{$field};
+    }
 
     $args{extra} = {} unless defined $args{extra};
     return bless \%args, $class;
@@ -56,12 +61,12 @@ sub get {
 sub to_hash {
     my ($self) = @_;
     my $hash = {
+        %{$self->extra},
         url      => $self->url,
         sha256   => $self->sha256,
         size     => $self->size + 0,
         type     => $self->type,
         uploaded => $self->uploaded + 0,
-        %{$self->extra},
     };
     $hash->{nip94} = $self->nip94 if defined $self->nip94;
     return $hash;
@@ -123,11 +128,13 @@ preserved in C<extra> so callers do not lose extension data.
     my $blob = Net::Blossom::BlobDescriptor->new(%args);
 
 Creates a descriptor. Required arguments are C<url>, C<sha256>, C<size>,
-C<type>, and C<uploaded>. C<sha256> must be lowercase 64-character hex.
-C<size> and C<uploaded> must be non-negative integers.
+C<type>, and C<uploaded>. Required fields must be scalar values. C<sha256> must
+be lowercase 64-character hex. C<size> and C<uploaded> must be non-negative
+integers.
 
 Optional C<nip94> must be an array reference of NIP-94 tag arrays. Optional
-C<extra> must be a hash reference.
+C<extra> must be a hash reference and must not contain standard descriptor field
+names.
 
 Unknown arguments or invalid values croak.
 
