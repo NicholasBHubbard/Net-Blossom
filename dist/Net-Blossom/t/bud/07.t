@@ -26,6 +26,9 @@ sub dies(&) {
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 my $JSON = JSON::PP->new->utf8->canonical;
+my $CASHU_CHALLENGE = 'creqApWF0gaNhdGVub3N0cmFheKlucHJvZmlsZTFxeTI4d3VtbjhnaGo3dW45ZDNzaGp0bnl2OWtoMnVld2Q5aHN6OW1od2RlbjV0ZTB3ZmprY2N0ZTljdXJ4dmVuOWVlaHFjdHJ2NWhzenJ0aHdkZW41dGUwZGVoaHh0bnZkYWtxcWd5ZGFxeTdjdXJrNDM5eWtwdGt5c3Y3dWRoZGh1NjhzdWNtMjk1YWtxZWZkZWhrZjBkNDk1Y3d1bmw1YWeBgmFuYjE3YWloYjdhOTAxNzZhYQphdWNzYXRhbYF4Imh0dHBzOi8vbm9mZWVzLnRlc3RudXQuY2FzaHUuc3BhY2U';
+my $PADDED_CASHU_CHALLENGE = $CASHU_CHALLENGE . '=';
+my $LIGHTNING_CHALLENGE = 'lnbc30n1pnnmw3lpp57727jjq8zxctahfavqacymellq56l70f7lwfkmhxfjva6dgul2zqhp5w48l28v60yvythn6qvnpq0lez54422a042yaw4kq8arvd68a6n7qcqzzsxqyz5vqsp5sqezejdfaxx5hge83tf59a50h6gagwah59fjn9mw2d5mn278jkys9qxpqysgqt2q2lhjl9kgfaqz864mhlsspftzdyr642lf3zdt6ljqj6wmathdhtgcn0e6f4ym34jl0qkt6gwnllygvzkhdlpq64c6yv3rta2hyzlqp8k28pz';
 
 sub descriptor {
     return {
@@ -42,8 +45,8 @@ subtest 'BUD-07 402 responses croak as PaymentRequired with payment challenges' 
         status  => 402,
         reason  => 'Payment Required',
         headers => {
-            'X-Cashu'     => 'creqApWF0gaNh...',
-            'x-lightning' => 'lnbc30n1pnnmw3...',
+            'X-Cashu'     => $CASHU_CHALLENGE,
+            'x-lightning' => $LIGHTNING_CHALLENGE,
             'X-Fedimint'  => 'future-method-payload',
             'X-Reason'    => 'payment required for upload',
         },
@@ -57,11 +60,47 @@ subtest 'BUD-07 402 responses croak as PaymentRequired with payment challenges' 
     is($error->status, 402, 'status');
     is($error->x_reason, 'payment required for upload', 'x-reason diagnostic');
     is_deeply([$error->payment_methods], [qw(cashu fedimint lightning)], 'payment methods parsed');
-    is($error->payment_challenge('cashu'), 'creqApWF0gaNh...', 'cashu challenge');
-    is($error->payment_challenge('lightning'), 'lnbc30n1pnnmw3...', 'lightning challenge');
+    is($error->payment_challenge('cashu'), $CASHU_CHALLENGE, 'cashu challenge');
+    is($error->payment_challenge('lightning'), $LIGHTNING_CHALLENGE, 'lightning challenge');
     is($error->payment_challenge('x-fedimint'), 'future-method-payload', 'future method challenge');
     is($error->payment_challenge('reason'), undef, 'x-reason is not a payment method');
     like("$error", qr/402 Payment Required: payment required for upload/, 'stringifies usefully');
+};
+
+subtest 'BUD-07 validates known payment challenge payloads' => sub {
+    my $ua = Local::UA->new({
+        status  => 402,
+        reason  => 'Payment Required',
+        headers => {
+            'X-Cashu'     => 'creqAbm90LWNib3I',
+            'X-Lightning' => 'lnbc30n1pnnmw3',
+            'X-Fedimint'  => 'future-method-payload',
+        },
+        content => 'pay first',
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $error = dies { $client->upload_blob('paid bytes') };
+    isa_ok($error, 'Net::Blossom::PaymentRequired');
+    is_deeply([$error->payment_methods], [qw(fedimint)], 'invalid known challenges skipped');
+    is($error->payment_challenge('cashu'), undef, 'invalid cashu challenge skipped');
+    is($error->payment_challenge('lightning'), undef, 'invalid lightning challenge skipped');
+    is($error->payment_challenge('fedimint'), 'future-method-payload', 'future method challenge preserved');
+};
+
+subtest 'BUD-07 accepts padded NUT-24 Cashu payment requests' => sub {
+    my $ua = Local::UA->new({
+        status  => 402,
+        reason  => 'Payment Required',
+        headers => { 'X-Cashu' => $PADDED_CASHU_CHALLENGE },
+        content => 'pay first',
+    });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+
+    my $error = dies { $client->upload_blob('paid bytes') };
+    isa_ok($error, 'Net::Blossom::PaymentRequired');
+    is_deeply([$error->payment_methods], [qw(cashu)], 'padded cashu challenge parsed');
+    is($error->payment_challenge('cashu'), $PADDED_CASHU_CHALLENGE, 'padded cashu challenge preserved');
 };
 
 subtest 'BUD-07 payment proof headers can be supplied when retrying body endpoints' => sub {
@@ -97,14 +136,14 @@ subtest 'BUD-07 HEAD preflights expose payment challenges but are not retried wi
     my $ua = Local::UA->new({
         status  => 402,
         reason  => 'Payment Required',
-        headers => { 'X-Cashu' => 'creq-upload', 'X-Reason' => 'pay before upload' },
+        headers => { 'X-Cashu' => $CASHU_CHALLENGE, 'X-Reason' => 'pay before upload' },
         content => '',
     });
     my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
 
     my $error = dies { $client->head_upload('paid bytes') };
     isa_ok($error, 'Net::Blossom::PaymentRequired');
-    is($error->payment_challenge('cashu'), 'creq-upload', 'preflight challenge exposed');
+    is($error->payment_challenge('cashu'), $CASHU_CHALLENGE, 'preflight challenge exposed');
 
     my $retry_error = dies {
         $client->head_upload('paid bytes', payment => { cashu => 'cashuBo2F0gqJhaUgA' });

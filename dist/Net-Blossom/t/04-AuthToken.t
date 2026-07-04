@@ -41,6 +41,8 @@ sub dies(&) {
 
 my $PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
+my $FUTURE = time + 3600;
+my $PAST = time - 1;
 
 sub decode_b64url {
     my ($value) = @_;
@@ -55,7 +57,7 @@ subtest 'creates signed BUD-11 kind 24242 event' => sub {
         key        => $key,
         action     => 'upload',
         content    => 'Upload Blob',
-        expiration => 1772019044,
+        expiration => $FUTURE,
         server     => 'cdn.example.com',
         hashes     => [$HASH],
         created_at => 1708850000,
@@ -70,10 +72,29 @@ subtest 'creates signed BUD-11 kind 24242 event' => sub {
 
     is_deeply($event->tags, [
         ['t', 'upload'],
-        ['expiration', '1772019044'],
+        ['expiration', '' . $FUTURE],
         ['server', 'cdn.example.com'],
         ['x', $HASH],
     ], 'tags');
+};
+
+subtest 'creates BUD-11 server-scoped events with multiple server tags' => sub {
+    my $key = Local::Key->new($PUBKEY);
+    my $token = Net::Blossom::AuthToken->new(
+        key        => $key,
+        action     => 'get',
+        content    => 'Get Blob',
+        expiration => $FUTURE,
+        servers    => ['cdn.example.com', 'media.example.com'],
+        created_at => 1708850000,
+    );
+
+    is_deeply($token->to_event->tags, [
+        ['t', 'get'],
+        ['expiration', '' . $FUTURE],
+        ['server', 'cdn.example.com'],
+        ['server', 'media.example.com'],
+    ], 'multiple server tags');
 };
 
 subtest 'encodes Authorization header as Nostr base64url without padding' => sub {
@@ -82,7 +103,7 @@ subtest 'encodes Authorization header as Nostr base64url without padding' => sub
         key        => $key,
         action     => 'delete',
         content    => 'Delete Blob',
-        expiration => 1772019044,
+        expiration => $FUTURE,
         hashes     => [$HASH],
         created_at => 1708850000,
     );
@@ -101,11 +122,17 @@ subtest 'encodes Authorization header as Nostr base64url without padding' => sub
 subtest 'validates BUD-11 token inputs' => sub {
     my $key = Local::Key->new($PUBKEY);
 
-    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'bogus', content => 'x', expiration => 1) },
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'bogus', content => 'x', expiration => $FUTURE) },
         qr/action/, 'unknown action rejected');
-    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => 1, server => 'https://cdn.example.com') },
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => $PAST, hashes => [$HASH]) },
+        qr/expiration.*future/, 'expired token rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => $FUTURE, server => 'https://cdn.example.com') },
         qr/server.*domain/, 'server URL rejected');
-    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => 1, hashes => ['A' x 64]) },
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, servers => 'cdn.example.com') },
+        qr/servers.*array reference/, 'servers arrayref required');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE, servers => ['https://cdn.example.com']) },
+        qr/server.*domain/, 'server URL in servers rejected');
+    like(dies { Net::Blossom::AuthToken->new(key => $key, action => 'upload', content => 'x', expiration => $FUTURE, hashes => ['A' x 64]) },
         qr/hash.*lowercase hex/, 'uppercase hash rejected');
 };
 
@@ -113,15 +140,15 @@ subtest 'requires hash scope for BUD-11 hash-scoped actions' => sub {
     my $key = Local::Key->new($PUBKEY);
 
     for my $action (qw(upload delete media)) {
-        like(dies { Net::Blossom::AuthToken->new(key => $key, action => $action, content => 'x', expiration => 1) },
+        like(dies { Net::Blossom::AuthToken->new(key => $key, action => $action, content => 'x', expiration => $FUTURE) },
             qr/requires at least one hash/, "$action requires default hash scope");
-        like(dies { Net::Blossom::AuthToken->new(key => $key, action => $action, content => 'x', expiration => 1, hashes => []) },
+        like(dies { Net::Blossom::AuthToken->new(key => $key, action => $action, content => 'x', expiration => $FUTURE, hashes => []) },
             qr/requires at least one hash/, "$action rejects empty hash scope");
     }
 
-    ok(Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => 1),
+    ok(Net::Blossom::AuthToken->new(key => $key, action => 'get', content => 'x', expiration => $FUTURE),
         'get may omit hash scope');
-    ok(Net::Blossom::AuthToken->new(key => $key, action => 'list', content => 'x', expiration => 1),
+    ok(Net::Blossom::AuthToken->new(key => $key, action => 'list', content => 'x', expiration => $FUTURE),
         'list does not use hash scope');
 };
 

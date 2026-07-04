@@ -5,7 +5,7 @@ use strictures 2;
 use Net::Blossom::_ConstructorArgs ();
 
 use Carp qw(croak);
-use Class::Tiny qw(key action content expiration server hashes created_at);
+use Class::Tiny qw(key action content expiration server servers hashes created_at);
 use JSON::PP ();
 use MIME::Base64 qw(encode_base64);
 use Net::Nostr::Event;
@@ -17,7 +17,7 @@ my $JSON = JSON::PP->new->utf8->canonical;
 sub new {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
-    my %known = map { $_ => 1 } qw(key action content expiration server hashes created_at);
+    my %known = map { $_ => 1 } qw(key action content expiration server servers hashes created_at);
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
 
@@ -29,11 +29,20 @@ sub new {
     croak "expiration is required" unless defined $args{expiration};
     croak "expiration must be a non-negative integer"
         unless $args{expiration} =~ /\A\d+\z/;
+    croak "expiration must be in the future"
+        unless $args{expiration} > time;
 
-    if (defined $args{server}) {
-        croak "server must be a lowercase domain name"
-            unless $args{server} =~ /\A[a-z0-9.-]+\z/;
+    my @servers;
+    push @servers, $args{server} if defined $args{server};
+    if (defined $args{servers}) {
+        croak "servers must be an array reference" unless ref($args{servers}) eq 'ARRAY';
+        push @servers, @{$args{servers}};
     }
+    for my $server (@servers) {
+        croak "server must be a lowercase domain name"
+            unless defined $server && !ref($server) && $server =~ /\A[a-z0-9.-]+\z/;
+    }
+    $args{servers} = \@servers;
 
     $args{hashes} = [] unless defined $args{hashes};
     croak "hashes must be an array reference" unless ref($args{hashes}) eq 'ARRAY';
@@ -57,7 +66,7 @@ sub to_event {
         ['t', $self->action],
         ['expiration', '' . $self->expiration],
     );
-    push @tags, ['server', $self->server] if defined $self->server;
+    push @tags, map { ['server', $_] } @{$self->servers};
     push @tags, map { ['x', $_] } @{$self->hashes};
 
     my $event = Net::Nostr::Event->new(
