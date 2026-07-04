@@ -1,7 +1,7 @@
 use strictures 2;
 
 use Test::More;
-use JSON::PP ();
+use JSON ();
 
 use Net::Blossom::Client;
 
@@ -27,7 +27,7 @@ my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 my $EVENT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 my $PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 my $SIG = 'b' x 128;
-my $JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8->canonical;
 
 sub report_event {
     return {

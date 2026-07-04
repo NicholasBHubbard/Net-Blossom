@@ -2,7 +2,7 @@ use strictures 2;
 
 use Test::More;
 use Digest::SHA qw(sha256_hex);
-use JSON::PP ();
+use JSON ();
 
 use Net::Blossom::Client;
 
@@ -25,7 +25,7 @@ sub dies(&) {
 }
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
-my $JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8->canonical;
 my $CASHU_CHALLENGE = 'creqApWF0gaNhdGVub3N0cmFheKlucHJvZmlsZTFxeTI4d3VtbjhnaGo3dW45ZDNzaGp0bnl2OWtoMnVld2Q5aHN6OW1od2RlbjV0ZTB3ZmprY2N0ZTljdXJ4dmVuOWVlaHFjdHJ2NWhzenJ0aHdkZW41dGUwZGVoaHh0bnZkYWtxcWd5ZGFxeTdjdXJrNDM5eWtwdGt5c3Y3dWRoZGh1NjhzdWNtMjk1YWtxZWZkZWhrZjBkNDk1Y3d1bmw1YWeBgmFuYjE3YWloYjdhOTAxNzZhYQphdWNzYXRhbYF4Imh0dHBzOi8vbm9mZWVzLnRlc3RudXQuY2FzaHUuc3BhY2U';
 my $PADDED_CASHU_CHALLENGE = $CASHU_CHALLENGE . '=';
 my $LIGHTNING_CHALLENGE = 'lnbc30n1pnnmw3lpp57727jjq8zxctahfavqacymellq56l70f7lwfkmhxfjva6dgul2zqhp5w48l28v60yvythn6qvnpq0lez54422a042yaw4kq8arvd68a6n7qcqzzsxqyz5vqsp5sqezejdfaxx5hge83tf59a50h6gagwah59fjn9mw2d5mn278jkys9qxpqysgqt2q2lhjl9kgfaqz864mhlsspftzdyr642lf3zdt6ljqj6wmathdhtgcn0e6f4ym34jl0qkt6gwnllygvzkhdlpq64c6yv3rta2hyzlqp8k28pz';

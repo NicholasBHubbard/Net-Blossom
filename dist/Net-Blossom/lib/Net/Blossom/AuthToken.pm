@@ -6,13 +6,13 @@ use Net::Blossom::_ConstructorArgs ();
 
 use Carp qw(croak);
 use Class::Tiny qw(key action content expiration server servers hashes created_at);
-use JSON::PP ();
+use JSON ();
 use MIME::Base64 qw(encode_base64);
 use Net::Nostr::Event;
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my %ACTION = map { $_ => 1 } qw(get upload list delete media);
-my $JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8->canonical;
 
 sub new {
     my $class = shift;

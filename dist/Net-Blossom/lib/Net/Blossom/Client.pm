@@ -13,14 +13,14 @@ use Carp qw(croak);
 use Class::Tiny qw(server ua auth);
 use Digest::SHA qw(sha256_hex);
 use HTTP::Tiny;
-use JSON::PP ();
+use JSON ();
 use MIME::Base64 qw(decode_base64);
 use Net::Nostr::Zap qw(bolt11_amount);
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $HEX128 = qr/\A[0-9a-f]{128}\z/;
-my $JSON = JSON::PP->new->utf8;
-my $CANONICAL_JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8;
+my $CANONICAL_JSON = JSON->new->utf8->canonical;
 my %RESERVED_PAYMENT_METHOD = map { $_ => 1 } qw(reason sha-256 content-type content-length);
 my $BECH32_CHARS = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 my %BECH32_VALUE = map { substr($BECH32_CHARS, $_, 1) => $_ } 0 .. length($BECH32_CHARS) - 1;

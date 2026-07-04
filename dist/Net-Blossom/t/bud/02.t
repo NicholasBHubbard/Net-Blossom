@@ -2,7 +2,7 @@ use strictures 2;
 
 use Test::More;
 use Digest::SHA qw(sha256_hex);
-use JSON::PP ();
+use JSON ();
 
 use Net::Blossom::BlobDescriptor;
 use Net::Blossom::Client;
@@ -20,7 +20,7 @@ use Net::Blossom::Client;
 }
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
-my $JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8->canonical;
 
 sub descriptor {
     return {

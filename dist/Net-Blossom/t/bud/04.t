@@ -1,7 +1,7 @@
 use strictures 2;
 
 use Test::More;
-use JSON::PP ();
+use JSON ();
 
 use Net::Blossom::Client;
 
@@ -25,7 +25,7 @@ sub dies(&) {
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 my $SOURCE = "https://cdn.satellite.earth/$HASH.pdf";
-my $JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8->canonical;
 
 sub descriptor {
     return {

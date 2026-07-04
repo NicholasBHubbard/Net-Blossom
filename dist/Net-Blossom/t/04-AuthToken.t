@@ -1,7 +1,7 @@
 use strictures 2;
 
 use Test::More;
-use JSON::PP ();
+use JSON ();
 use MIME::Base64 qw(decode_base64);
 
 use Net::Blossom::AuthToken;
@@ -114,7 +114,7 @@ subtest 'encodes Authorization header as Nostr base64url without padding' => sub
     my ($scheme, $payload) = split / /, $header, 2;
     is($scheme, 'Nostr', 'scheme');
 
-    my $data = JSON::PP->new->utf8->decode(decode_b64url($payload));
+    my $data = JSON->new->utf8->decode(decode_b64url($payload));
     is($data->{kind}, 24242, 'decoded kind');
     is($data->{tags}[0][1], 'delete', 'decoded action tag');
 };

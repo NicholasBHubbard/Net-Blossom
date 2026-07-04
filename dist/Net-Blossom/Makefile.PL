@@ -15,6 +15,7 @@ WriteMakefile(
     },
     PREREQ_PM        => {
         'Class::Tiny'       => '0',
+        'JSON'              => '0',
         'Net::Nostr::Core'  => '0',
         'strictures'        => '2',
     },

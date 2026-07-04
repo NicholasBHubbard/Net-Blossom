@@ -2,7 +2,7 @@ use strictures 2;
 
 use Test::More;
 use Digest::SHA qw(sha256_hex);
-use JSON::PP ();
+use JSON ();
 
 use Net::Blossom::Client;
 use Net::Blossom::ServerList;
@@ -36,7 +36,7 @@ sub dies(&) {
 
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 my $AUTHOR = 'ec4425ff5e9446080d2f70440188e3ca5d6da8713db7bdeef73d0ed54d9093f0';
-my $JSON = JSON::PP->new->utf8->canonical;
+my $JSON = JSON->new->utf8->canonical;
 
 sub descriptor_hash {
     return {
