@@ -22,11 +22,16 @@ for storage, authorization, rate limits, observability, and operational policy.
 
 This repository is in early implementation. `Net-Blossom` currently provides
 blob descriptors, response and error objects, a small HTTP client, and BUD-11
-authorization token creation, BUD-10 Blossom URI parsing/building, and BUD-03
-user server list handling, BUD-04 mirror requests, BUD-05 media processing
-client requests, BUD-06 upload preflight requests, BUD-07 payment challenge
-handling, BUD-08 NIP-94 metadata tags, and BUD-09 blob report requests. Server
-behavior is still scaffold-only.
+authorization token creation, BUD-10 Blossom URI parsing/building, BUD-03 user
+server list handling, BUD-04 mirror requests, BUD-05 media processing client
+requests, BUD-06 upload preflight requests, BUD-07 payment challenge handling,
+BUD-08 NIP-94 metadata tags, BUD-09 blob report requests, and BUD-12 client list
+and delete requests.
+
+`Net-Blossom-Server` currently provides framework-neutral request and response
+objects, a storage contract, server-owned upload hashing, and handlers for
+`PUT /upload`, `GET /<sha256>`, `DELETE /<sha256>`, and
+`GET /list/<pubkey>`.
 
 ## API contracts
 

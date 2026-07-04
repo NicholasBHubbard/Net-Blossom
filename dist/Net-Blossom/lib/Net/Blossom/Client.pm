@@ -47,6 +47,7 @@ sub new {
 sub get_blob {
     my $self = shift;
     my ($sha256, %opts) = @_;
+    _validate_options(\%opts, qw(extension range payment));
     _validate_sha256($sha256);
 
     my %headers;
@@ -66,6 +67,7 @@ sub get_blob {
 sub head_blob {
     my $self = shift;
     my ($sha256, %opts) = @_;
+    _validate_options(\%opts, qw(extension payment));
     _validate_sha256($sha256);
 
     return $self->_request(
@@ -81,6 +83,7 @@ sub head_blob {
 sub upload_blob {
     my $self = shift;
     my ($content, %opts) = @_;
+    _validate_options(\%opts, qw(type payment));
     croak "content is required" unless defined $content;
 
     my $sha256 = sha256_hex($content);
@@ -107,6 +110,7 @@ sub upload_blob {
 sub head_upload {
     my $self = shift;
     my ($content, %opts) = @_;
+    _validate_options(\%opts, qw(type payment));
     croak "content is required" unless defined $content;
 
     my $sha256 = sha256_hex($content);
@@ -130,6 +134,7 @@ sub head_upload {
 sub process_media {
     my $self = shift;
     my ($content, %opts) = @_;
+    _validate_options(\%opts, qw(type payment));
     croak "content is required" unless defined $content;
 
     my $sha256 = sha256_hex($content);
@@ -156,6 +161,7 @@ sub process_media {
 sub head_media {
     my $self = shift;
     my ($content, %opts) = @_;
+    _validate_options(\%opts, qw(type payment));
     croak "content is required" unless defined $content;
 
     my $sha256 = sha256_hex($content);
@@ -179,6 +185,7 @@ sub head_media {
 sub upload_blob_to_servers {
     my $self = shift;
     my ($content, $servers, %opts) = @_;
+    _validate_options(\%opts, qw(type payment));
     my @servers = _server_values($servers);
 
     return $self->_client_for_server($servers[0])->upload_blob($content, %opts);
@@ -187,6 +194,7 @@ sub upload_blob_to_servers {
 sub mirror_blob {
     my $self = shift;
     my ($url, %opts) = @_;
+    _validate_options(\%opts, qw(payment));
     croak "url is required" unless defined $url && length $url;
     croak "url must be a string" if ref($url);
 
@@ -214,6 +222,7 @@ sub mirror_blob {
 sub report_blob {
     my $self = shift;
     my ($event, %opts) = @_;
+    _validate_options(\%opts, qw(payment));
     _validate_report_event($event);
 
     my $content = $CANONICAL_JSON->encode($event);
@@ -236,6 +245,7 @@ sub report_blob {
 sub list_blobs {
     my $self = shift;
     my ($pubkey, %opts) = @_;
+    _validate_options(\%opts, qw(cursor limit since until payment));
     croak "pubkey must be 64-char lowercase hex" unless defined $pubkey && $pubkey =~ $HEX64;
 
     my @query;
@@ -263,6 +273,7 @@ sub list_blobs {
 sub delete_blob {
     my $self = shift;
     my ($sha256, %opts) = @_;
+    _validate_options(\%opts, qw(payment));
     _validate_sha256($sha256);
 
     return $self->_request(
@@ -278,6 +289,7 @@ sub delete_blob {
 sub get_blob_from_servers {
     my $self = shift;
     my ($url, $servers, %opts) = @_;
+    _validate_options(\%opts, qw(extension range payment));
     my ($sha256, $extension) = Net::Blossom::ServerList->extract_blob_reference($url);
     croak "URL does not contain a sha256 hash" unless defined $sha256;
 
@@ -419,6 +431,13 @@ sub _payment_headers {
 
     croak "payment requires at least one proof" unless %headers;
     return %headers;
+}
+
+sub _validate_options {
+    my ($opts, @known) = @_;
+    my %known = map { $_ => 1 } @known;
+    my @unknown = grep { !exists $known{$_} } keys %$opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
 }
 
 sub _payment_challenges {
@@ -755,9 +774,9 @@ including blob get/head/upload/delete, mirror requests, media processing,
 upload/media preflights, blob reports, payment challenge handling, server-list
 fallback helpers, and list pagination.
 
-Methods croak for invalid local arguments. Non-success HTTP responses die with
-C<Net::Blossom::Error>. C<402 Payment Required> responses die with
-C<Net::Blossom::PaymentRequired>.
+Methods croak for invalid local arguments and unknown options. Non-success HTTP
+responses die with C<Net::Blossom::Error>. C<402 Payment Required> responses die
+with C<Net::Blossom::PaymentRequired>.
 
 =head1 CONSTRUCTOR
 
@@ -971,8 +990,8 @@ C<content-length> are rejected.
 
 =head1 ERRORS
 
-Invalid local arguments croak. Failed HTTP responses die with
-C<Net::Blossom::Error>. Payment challenges die with
+Invalid local arguments and unknown method options croak. Failed HTTP responses
+die with C<Net::Blossom::Error>. Payment challenges die with
 C<Net::Blossom::PaymentRequired>.
 
 Malformed JSON success bodies also croak.

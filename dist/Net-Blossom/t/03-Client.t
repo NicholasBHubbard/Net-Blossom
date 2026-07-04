@@ -721,6 +721,30 @@ subtest 'payment proof headers coexist with authorization headers' => sub {
     is($opts->{headers}{'X-Cashu'}, 'cashuBo2F0gqJhaUgA', 'payment proof header');
 };
 
+subtest 'public client methods reject unknown options' => sub {
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => Local::UA->new);
+    my @cases = (
+        ['get_blob', sub { $client->get_blob($HASH, bogus => 1) }],
+        ['head_blob', sub { $client->head_blob($HASH, bogus => 1) }],
+        ['upload_blob', sub { $client->upload_blob('body', bogus => 1) }],
+        ['head_upload', sub { $client->head_upload('body', bogus => 1) }],
+        ['process_media', sub { $client->process_media('body', bogus => 1) }],
+        ['head_media', sub { $client->head_media('body', bogus => 1) }],
+        ['upload_blob_to_servers', sub { $client->upload_blob_to_servers('body', ['https://cdn.example.com'], bogus => 1) }],
+        ['mirror_blob', sub { $client->mirror_blob("https://cdn.satellite.earth/$HASH.pdf", bogus => 1) }],
+        ['report_blob', sub { $client->report_blob(report_event(), bogus => 1) }],
+        ['list_blobs', sub { $client->list_blobs($PUBKEY, bogus => 1) }],
+        ['delete_blob', sub { $client->delete_blob($HASH, bogus => 1) }],
+        ['get_blob_from_servers', sub { $client->get_blob_from_servers("https://cdn.example.com/$HASH", ['https://cdn.example.com'], bogus => 1) }],
+    );
+
+    for my $case (@cases) {
+        my ($name, $code) = @$case;
+        like(dies { $code->() },
+            qr/unknown option\(s\): bogus/, "$name rejects unknown option");
+    }
+};
+
 subtest 'HTTP errors croak as Net::Blossom::Error with X-Reason' => sub {
     my $ua = Local::UA->new({
         status  => 403,
