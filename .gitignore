@@ -3,6 +3,7 @@
 /.cpanm/
 /.plx/
 /blossom/
+cpanfile
 
 /dist/Net-Blossom/Makefile
 /dist/Net-Blossom/MYMETA.json
