@@ -68,11 +68,6 @@ the preflight challenge to complete payment and then retry the corresponding
 code can use `Net::Nostr::Core` or another wallet/payment service to satisfy the
 challenge and then pass the proof back to the Blossom client.
 
-## License
-
-This repository is licensed under the GNU General Public License version 3. See
-`LICENSE`.
-
 ## Development environment
 
 The repo uses `plx` with project-local `local::lib` roots:
@@ -116,3 +111,8 @@ Inspect the active Perl layout:
 ## AI Usage
 
 This code was developed in part with AI tooling such as Claude Code and Codex. We want to be upfront about that.
+
+## License
+
+This repository is licensed under the GNU General Public License version 3. See
+`LICENSE`.
