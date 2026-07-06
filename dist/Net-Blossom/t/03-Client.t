@@ -421,7 +421,9 @@ subtest 'PUT /report sends report event JSON' => sub {
 
     my $request = ($ua->requests)[0];
     my ($method, $url, $opts) = @$request;
-    my $body = $JSON->encode($event);
+    # Encode a fresh event: report_blob normalizes JSON types, and validating
+    # the passed-in $event stringifies its numeric fields in place.
+    my $body = $JSON->encode(report_event());
     is($method, 'PUT', 'PUT method');
     is($url, 'https://cdn.example.com/report', 'report URL');
     is($opts->{content}, $body, 'report event body');

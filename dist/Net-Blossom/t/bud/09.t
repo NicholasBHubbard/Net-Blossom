@@ -59,7 +59,9 @@ subtest 'BUD-09 PUT /report sends signed NIP-56 report event JSON' => sub {
     is($response->status, 202, 'success response returned');
 
     my ($method, $url, $opts) = @{($ua->requests)[0]};
-    my $body = $JSON->encode($event);
+    # Encode a fresh event: report_blob normalizes JSON types, and validating
+    # the passed-in $event stringifies its numeric fields in place.
+    my $body = $JSON->encode(report_event());
     is($method, 'PUT', 'PUT method');
     is($url, 'https://cdn.example.com/report', 'report endpoint');
     is($opts->{content}, $body, 'canonical event JSON body');
