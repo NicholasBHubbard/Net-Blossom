@@ -429,6 +429,28 @@ subtest 'PUT /report sends report event JSON' => sub {
     is($opts->{headers}{'Content-Length'}, length($body), 'content length header');
 };
 
+subtest 'PUT /report preserves JSON types of the signed event' => sub {
+    # A caller may hold the signed event with kind/created_at as strings (for
+    # example decoded from a source that stringified them). NIP-01/NIP-56
+    # require them to be JSON numbers and tag values to be strings; re-encoding
+    # with the wrong types would break the event signature.
+    my %event = %{ report_event() };
+    $event{kind}       = '1984';
+    $event{created_at} = '1725909682';
+    $event{tags}       = [['x', $HASH, 'malware'], ['expiration', 1735689600]];
+
+    my $ua = Local::UA->new({ status => 202, reason => 'Accepted', headers => {}, content => '' });
+    my $client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $ua);
+    $client->report_blob(\%event);
+
+    my $body = (($ua->requests)[0])->[2]{content};
+    like($body,   qr/"kind":1984(?![0-9])/,       'kind serialized as a JSON number');
+    unlike($body, qr/"kind":"1984"/,              'kind not serialized as a string');
+    like($body,   qr/"created_at":1725909682/,    'created_at serialized as a JSON number');
+    unlike($body, qr/"created_at":"1725909682"/,  'created_at not serialized as a string');
+    like($body,   qr/"expiration","1735689600"/,  'numeric tag value serialized as a string');
+};
+
 subtest 'PUT upload can target the first explicit server list entry' => sub {
     my $body = 'server list upload';
     my $ua = Local::UA->new({
@@ -803,6 +825,50 @@ subtest 'malformed server JSON responses croak clearly' => sub {
     my $bad_descriptor_client = Net::Blossom::Client->new(server => 'https://cdn.example.com', ua => $bad_descriptor_ua);
     like(dies { $bad_descriptor_client->list_blobs($PUBKEY) },
         qr/size is required/, 'invalid list descriptor rejected');
+};
+
+subtest 'static auth token must match the request action (BUD-11 t verb)' => sub {
+    my $key = Local::Key->new($PUBKEY);
+    my $token = Net::Blossom::AuthToken->new(
+        key        => $key,
+        action     => 'upload',
+        content    => 'Upload Blob',
+        expiration => 9999999999,
+        hashes     => [$HASH],
+        created_at => 1708850000,
+    );
+    my $client = Net::Blossom::Client->new(
+        server => 'https://cdn.example.com',
+        auth   => $token,
+        ua     => Local::UA->new,
+    );
+
+    ok(
+        $client->_authorization_header(
+            action => 'upload',
+            method => 'PUT',
+            url    => 'https://cdn.example.com/upload',
+            sha256 => $HASH,
+        ),
+        'matching action yields an Authorization header'
+    );
+
+    # An upload-scoped token must not be sent on other endpoints: it fails the
+    # server's BUD-11 t-verb check and would leak capability onto the request.
+    for my $action (qw(get delete list media)) {
+        like(
+            dies {
+                $client->_authorization_header(
+                    action => $action,
+                    method => 'GET',
+                    url    => 'https://cdn.example.com/x',
+                    sha256 => $HASH,
+                );
+            },
+            qr/action/,
+            "upload token rejected for request action $action"
+        );
+    }
 };
 
 done_testing;

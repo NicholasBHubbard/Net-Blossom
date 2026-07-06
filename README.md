@@ -44,7 +44,9 @@ SSRF protection.
 a code reference, or an object with `authorization_header(%context)`. Code
 references and objects receive `method`, `url`, `action`, and `sha256` context.
 `Net::Blossom::AuthToken` objects can be passed directly when a prebuilt BUD-11
-token is appropriate.
+token is appropriate. Because such a token carries a single BUD-11 `t` verb, it
+is only accepted on the matching endpoint; reusing one across endpoints croaks
+rather than sending a token the server would reject.
 
 HTTP result objects require `method`, `url`, `status`, and `reason` at
 construction time. `Net::Blossom::PaymentRequired` is a `Net::Blossom::Error`

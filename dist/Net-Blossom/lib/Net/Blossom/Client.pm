@@ -225,7 +225,7 @@ sub report_blob {
     _validate_options(\%opts, qw(payment));
     _validate_report_event($event);
 
-    my $content = $CANONICAL_JSON->encode($event);
+    my $content = $CANONICAL_JSON->encode(_report_event_wire_form($event));
     my %headers = (
         'Content-Type'   => 'application/json',
         'Content-Length' => length($content),
@@ -396,8 +396,22 @@ sub _authorization_header {
 
     return $self->auth->(%context) if ref($self->auth) eq 'CODE';
 
-    return $self->auth->authorization_header(%context)
-        if blessed($self->auth) && $self->auth->can('authorization_header');
+    if (blessed($self->auth) && $self->auth->can('authorization_header')) {
+        # A fixed-action token (e.g. Net::Blossom::AuthToken) carries a single
+        # BUD-11 't' verb. Sending it on an endpoint with a different action
+        # produces an authorization event every conformant server rejects, and
+        # leaks the token's capability onto that request, so refuse the mismatch.
+        if ($self->auth->can('action')) {
+            my $token_action = $self->auth->action;
+            if (defined $token_action
+                && defined $context{action}
+                && $token_action ne $context{action}) {
+                croak "auth token action '$token_action' does not match "
+                    . "request action '$context{action}'";
+            }
+        }
+        return $self->auth->authorization_header(%context);
+    }
 
     croak "auth must be a string, code reference, or object with authorization_header";
 }
@@ -674,6 +688,23 @@ sub _validate_sha256 {
         unless defined $sha256 && $sha256 =~ $HEX64;
 }
 
+sub _report_event_wire_form {
+    my ($event) = @_;
+
+    # The event is already signed, so it must go on the wire with the JSON
+    # types NIP-01/NIP-56 define regardless of how the caller typed the fields
+    # in memory: kind and created_at are numbers, tag values are strings.
+    # Re-encoding a numeric field as a string (or vice versa) changes the
+    # serialization the signature was computed over and breaks verification.
+    my %wire = %$event;
+    $wire{kind}       = 0 + $wire{kind};
+    $wire{created_at} = 0 + $wire{created_at};
+    $wire{content}    = "$wire{content}" if defined $wire{content};
+    $wire{tags}       = [map { [map { "$_" } @$_] } @{$wire{tags}}];
+
+    return \%wire;
+}
+
 sub _validate_report_event {
     my ($event) = @_;
     croak "report event must be a hash reference" unless ref($event) eq 'HASH';
@@ -812,6 +843,11 @@ code reference, or an object with C<authorization_header(%context)>.
 
 Code references and objects receive C<method>, C<url>, C<action>, and C<sha256>.
 They must return the header value or C<undef> to omit authorization.
+
+When the provider object exposes an C<action> accessor (as
+C<Net::Blossom::AuthToken> does), its action must match the request's action.
+A single fixed-action token cannot be reused across endpoints: a mismatch
+croaks rather than send a token whose BUD-11 C<t> verb the server would reject.
 
 =back
 
