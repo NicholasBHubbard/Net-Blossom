@@ -133,6 +133,33 @@ subtest 'fetch_blob accepts only allowed HTTP URLs' => sub {
         403, 'non-allowlisted host rejected');
 };
 
+subtest 'fetch_blob rejects non-default ports on allowed hosts' => sub {
+    my $ua = Local::UA->new(response => {
+        success => 1,
+        status  => 200,
+        reason  => 'OK',
+        headers => { 'content-type' => 'text/plain', 'content-length' => 4 },
+        content => 'body',
+    });
+    my $fetcher = Net::Blossom::Server::MirrorFetcher::HTTP->new(
+        allowed_hosts => ['cdn.example'],
+        max_bytes     => 1024,
+        user_agent    => $ua,
+    );
+
+    # An allowlisted host name must not become a way to reach arbitrary ports
+    # (e.g. internal services co-located on that host).
+    is(error_status { $fetcher->fetch_blob('http://cdn.example:22/blob.bin') },
+        403, 'non-default http port rejected');
+    is(error_status { $fetcher->fetch_blob('https://cdn.example:8443/blob.bin') },
+        403, 'non-default https port rejected');
+
+    # The scheme default port, explicit or implicit, is allowed.
+    ok($fetcher->fetch_blob('https://cdn.example/blob.txt'), 'implicit default port allowed');
+    ok($fetcher->fetch_blob('https://cdn.example:443/blob.txt'), 'explicit default https port allowed');
+    ok($fetcher->fetch_blob('http://cdn.example:80/blob.txt'), 'explicit default http port allowed');
+};
+
 subtest 'fetch_blob rejects redirects and origin failures' => sub {
     my $fetcher = Net::Blossom::Server::MirrorFetcher::HTTP->new(
         allowed_hosts => ['cdn.example'],

@@ -142,17 +142,30 @@ subtest 'handle_list_blobs validates request inputs' => sub {
         qr/pubkey must be 64-char lowercase hex/, 'uppercase pubkey rejected');
     like(dies { $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY"), bogus => 1) },
         qr/unknown option\(s\): bogus/, 'unknown option rejected');
-    like(dies { $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY", query => { cursor => 'A' x 64 })) },
-        qr/cursor must be 64-char lowercase hex/, 'uppercase cursor rejected');
-    like(dies { $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY", query => { cursor => [$CURSOR] })) },
-        qr/cursor must be a scalar/, 'cursor array rejected');
-    like(dies { $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY", query => { limit => 0 })) },
-        qr/limit must be a positive integer/, 'zero limit rejected');
-    like(dies { $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY", query => { limit => [50] })) },
-        qr/limit must be a scalar/, 'limit array rejected');
-    like(dies { $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY", query => { until => 1 })) },
-        qr/unknown query parameter\(s\): until/, 'unknown query rejected');
     is($storage->last_list_blobs, undef, 'invalid requests do not reach storage');
+};
+
+subtest 'handle_list_blobs rejects malformed query parameters with 400' => sub {
+    my $storage = Local::Storage->new(blobs => []);
+    my $server = Net::Blossom::Server->new(storage => $storage);
+
+    my @cases = (
+        ['uppercase cursor', { cursor => 'A' x 64 }],
+        ['non-scalar cursor', { cursor => [$CURSOR] }],
+        ['zero limit', { limit => 0 }],
+        ['non-scalar limit', { limit => [50] }],
+        ['unsupported parameter', { until => 1 }],
+    );
+    for my $case (@cases) {
+        my ($label, $query) = @$case;
+        my $error = dies {
+            $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY", query => $query));
+        };
+        isa_ok($error, 'Net::Blossom::Server::Error', "$label throws a typed error");
+        is($error->status, 400, "$label maps to a BUD-12 400");
+    }
+
+    is($storage->last_list_blobs, undef, 'malformed queries do not reach storage');
 };
 
 subtest 'handle_list_blobs validates storage output' => sub {

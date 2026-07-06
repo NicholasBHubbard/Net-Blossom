@@ -76,6 +76,13 @@ sub fetch_blob {
         reason => 'Mirror URL host is not allowed',
     ) unless $allowed{$host};
 
+    # The allowlist names hosts only, so an allowed host must not be usable to
+    # reach an arbitrary port (e.g. internal services co-located on that host).
+    Net::Blossom::Server::Error->throw(
+        status => 403,
+        reason => 'Mirror URL port is not allowed',
+    ) if $uri->port != $uri->default_port;
+
     my $body = '';
     my $response = eval {
         local @ENV{qw(http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY)};

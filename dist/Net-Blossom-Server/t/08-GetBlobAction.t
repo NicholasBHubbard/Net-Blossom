@@ -102,7 +102,7 @@ sub descriptor {
         url      => "https://cdn.example.com/$SHA256",
         sha256   => $SHA256,
         size     => exists $args{size} ? $args{size} : length($body),
-        type     => 'text/plain',
+        type     => exists $args{type} ? $args{type} : 'text/plain',
         uploaded => 1725105921,
         extra    => { alt => 'https://mirror.example.com/blob' },
     );
@@ -148,6 +148,43 @@ subtest 'handle_get_blob returns stream bodies without flattening' => sub {
     is($response->status, 200, 'stream status');
     is($response->header('content-length'), 10, 'stream content length from descriptor');
     is($response->body, $stream, 'stream body preserved');
+};
+
+subtest 'handle_get_blob sets defensive headers against sniffing and inline script' => sub {
+    my $server = sub {
+        my ($type) = @_;
+        my $storage = Local::Storage->new(blobs => {
+            $SHA256 => blob_result(descriptor => descriptor(type => $type, body => 'payload'), body => 'payload'),
+        });
+        return Net::Blossom::Server->new(storage => $storage)
+            ->handle_get_blob(request(method => 'GET', path => "/$SHA256"));
+    };
+
+    my $plain = $server->('text/plain');
+    is($plain->header('x-content-type-options'), 'nosniff', 'nosniff always present');
+    is($plain->header('content-disposition'), undef, 'text/plain is not forced to download');
+
+    # Actively-rendered types that can carry script must be sent as attachments.
+    for my $type ('text/html', 'text/html; charset=utf-8', 'image/svg+xml',
+        'application/xhtml+xml', 'application/xml', 'text/xml', 'IMAGE/SVG+XML') {
+        my $response = $server->($type);
+        is($response->header('content-disposition'), 'attachment',
+            "dangerous type $type served as attachment");
+        is($response->header('content-type'), $type,
+            "content-type preserved for $type");
+        is($response->header('x-content-type-options'), 'nosniff',
+            "nosniff present for $type");
+    }
+
+    # Types clients legitimately render inline must not be forced to download.
+    for my $type ('image/png', 'image/jpeg', 'application/pdf', 'video/mp4',
+        'audio/mpeg', 'application/octet-stream') {
+        my $response = $server->($type);
+        is($response->header('content-disposition'), undef,
+            "inline-safe type $type not forced to download");
+        is($response->header('x-content-type-options'), 'nosniff',
+            "nosniff present for $type");
+    }
 };
 
 subtest 'handle_get_blob returns 404 when storage has no descriptor' => sub {

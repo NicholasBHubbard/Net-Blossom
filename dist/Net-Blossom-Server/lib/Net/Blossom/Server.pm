@@ -14,7 +14,7 @@ use Net::Blossom::Server::Storage;
 use Net::Blossom::Server::UploadResult;
 
 use Carp qw(croak);
-use Class::Tiny qw(storage chunk_size clock mirror_fetcher);
+use Class::Tiny qw(storage chunk_size clock mirror_fetcher max_upload_bytes);
 use Digest::SHA ();
 use JSON ();
 use Scalar::Util qw(blessed);
@@ -26,14 +26,54 @@ my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $JSON = JSON->new->utf8;
 my $MAX_MIRROR_REQUEST_BYTES = 65536;
 
+# Content types a browser renders as active content (can execute script) when
+# served inline. Blobs are attacker-supplied, so these are sent as downloads
+# rather than rendered in the origin's security context. Everything else
+# (images, audio, video, PDF, plain text, octet-stream) is left inline, which
+# BUD-01 relies on for blobs to be "correctly displayed by clients".
+my %ATTACHMENT_ONLY_TYPES = map { $_ => 1 } qw(
+    text/html
+    application/xhtml+xml
+    image/svg+xml
+    application/xml
+    text/xml
+);
+
+sub _blob_response_headers {
+    my ($descriptor) = @_;
+
+    my %headers = (
+        'Content-Type'   => $descriptor->type,
+        'Content-Length' => $descriptor->size,
+
+        # Do not let the browser second-guess the declared type: a blob served
+        # as text/plain or application/octet-stream must not be sniffed into
+        # HTML and executed.
+        'X-Content-Type-Options' => 'nosniff',
+    );
+
+    my $type = $descriptor->type;
+    if (defined $type) {
+        (my $base = lc $type) =~ s/;.*//s;    # drop parameters like "; charset=utf-8"
+        $base =~ s/\s+//g;
+        $headers{'Content-Disposition'} = 'attachment' if $ATTACHMENT_ONLY_TYPES{$base};
+    }
+
+    return \%headers;
+}
+
 sub new {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
-    my %known = map { $_ => 1 } qw(storage chunk_size clock mirror_fetcher);
+    my %known = map { $_ => 1 } qw(storage chunk_size clock mirror_fetcher max_upload_bytes);
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
 
     Net::Blossom::Server::Storage->assert_implements($args{storage});
+
+    croak "max_upload_bytes must be a positive integer"
+        if defined $args{max_upload_bytes}
+        && (ref($args{max_upload_bytes}) || $args{max_upload_bytes} !~ /\A[1-9][0-9]*\z/);
 
     $args{chunk_size} = 65536 unless defined $args{chunk_size};
     croak "chunk_size must be a positive integer"
@@ -203,10 +243,7 @@ sub handle_get_blob {
 
     return Net::Blossom::Server::Response->new(
         status  => 200,
-        headers => {
-            'Content-Type'   => $descriptor->type,
-            'Content-Length' => $descriptor->size,
-        },
+        headers => _blob_response_headers($descriptor),
         body    => $result->body,
     );
 }
@@ -240,10 +277,7 @@ sub handle_head_blob {
 
     return Net::Blossom::Server::Response->new(
         status  => 200,
-        headers => {
-            'Content-Type'   => $descriptor->type,
-            'Content-Length' => $descriptor->size,
-        },
+        headers => _blob_response_headers($descriptor),
         body    => '',
     );
 }
@@ -475,24 +509,32 @@ sub _sha256_from_blob_path {
 
 sub _list_options_from_query {
     my ($query) = @_;
+
+    # Query parameters are client input, so malformed values are a BUD-12 400,
+    # not an internal error.
     my %known = map { $_ => 1 } qw(cursor limit);
     my @unknown = grep { !exists $known{$_} } keys %$query;
-    croak "unknown query parameter(s): " . join(', ', sort @unknown) if @unknown;
+    _bad_list_query('unknown query parameter(s): ' . join(', ', sort @unknown)) if @unknown;
 
     my %opts;
     if (exists $query->{cursor}) {
-        croak "cursor must be a scalar" if ref($query->{cursor});
-        croak "cursor must be 64-char lowercase hex" unless $query->{cursor} =~ $HEX64;
+        _bad_list_query('cursor must be a scalar') if ref($query->{cursor});
+        _bad_list_query('cursor must be 64-char lowercase hex') unless $query->{cursor} =~ $HEX64;
         $opts{cursor} = $query->{cursor};
     }
 
     if (exists $query->{limit}) {
-        croak "limit must be a scalar" if ref($query->{limit});
-        croak "limit must be a positive integer" unless $query->{limit} =~ /\A[1-9][0-9]*\z/;
+        _bad_list_query('limit must be a scalar') if ref($query->{limit});
+        _bad_list_query('limit must be a positive integer') unless $query->{limit} =~ /\A[1-9][0-9]*\z/;
         $opts{limit} = $query->{limit};
     }
 
     return %opts;
+}
+
+sub _bad_list_query {
+    my ($reason) = @_;
+    Net::Blossom::Server::Error->throw(status => 400, reason => $reason);
 }
 
 sub _pubkey_opt {
@@ -656,9 +698,11 @@ sub _mirror_fetch_result {
 
 sub _copy_body_to_upload {
     my ($self, $body, $upload, $sha) = @_;
+    my $max = $self->max_upload_bytes;
     my $size = 0;
 
     if (!ref($body)) {
+        _upload_too_large() if defined $max && length($body) > $max;
         _write_upload_chunk($upload, $sha, $body);
         return length $body;
     }
@@ -671,6 +715,7 @@ sub _copy_body_to_upload {
             last if $read == 0;
             _write_upload_chunk($upload, $sha, $chunk);
             $size += length $chunk;
+            _upload_too_large() if defined $max && $size > $max;
         }
         return $size;
     }
@@ -678,8 +723,16 @@ sub _copy_body_to_upload {
     while (defined(my $chunk = $body->getline)) {
         _write_upload_chunk($upload, $sha, $chunk);
         $size += length $chunk;
+        _upload_too_large() if defined $max && $size > $max;
     }
     return $size;
+}
+
+sub _upload_too_large {
+    Net::Blossom::Server::Error->throw(
+        status => 413,
+        reason => 'Uploaded blob is too large',
+    );
 }
 
 sub _write_upload_chunk {
@@ -859,6 +912,12 @@ Code reference returning the upload timestamp. Defaults to C<time>.
 Optional code reference or object with C<fetch_blob>. This is required for
 C<PUT /mirror>. No default network fetcher is provided.
 
+=item * C<max_upload_bytes>
+
+Optional positive integer bounding the size of an accepted upload. When set,
+C<PUT /upload> and C<PUT /media> bodies that exceed it are rejected with a
+C<413> and the partial upload is aborted. Defaults to unset (no limit).
+
 =back
 
 Unknown arguments or invalid values croak.
@@ -880,6 +939,11 @@ Returns the clock code reference.
 =head2 mirror_fetcher
 
 Returns the optional mirror fetcher.
+
+=head2 max_upload_bytes
+
+Returns the configured maximum upload size, or C<undef> when uploads are
+not size-limited.
 
 =head1 METHODS
 

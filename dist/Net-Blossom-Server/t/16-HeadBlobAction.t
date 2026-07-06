@@ -93,7 +93,7 @@ sub descriptor {
         url      => "https://cdn.example.com/$SHA256.txt",
         sha256   => $SHA256,
         size     => exists $args{size} ? $args{size} : length($body),
-        type     => 'text/plain',
+        type     => exists $args{type} ? $args{type} : 'text/plain',
         uploaded => 1725105921,
     );
 }
@@ -119,6 +119,28 @@ subtest 'handle_head_blob returns metadata without the blob body' => sub {
     is($response->header('content-length'), length('hello body'), 'content length from descriptor');
     is($response->body, '', 'head response body is empty');
     is($storage->{last_get_blob}, $SHA256, 'fallback get_blob used');
+};
+
+subtest 'handle_head_blob sets the same defensive headers as GET' => sub {
+    my $head = sub {
+        my ($type) = @_;
+        my $storage = Local::Storage->new(blobs => {
+            $SHA256 => blob_result(descriptor => descriptor(type => $type)),
+        });
+        return Net::Blossom::Server->new(storage => $storage)
+            ->handle_head_blob(request(method => 'HEAD', path => "/$SHA256"));
+    };
+
+    my $plain = $head->('text/plain');
+    is($plain->header('x-content-type-options'), 'nosniff', 'nosniff always present');
+    is($plain->header('content-disposition'), undef, 'text/plain is not forced to download');
+
+    my $html = $head->('text/html');
+    is($html->header('content-disposition'), 'attachment', 'dangerous type served as attachment');
+    is($html->header('x-content-type-options'), 'nosniff', 'nosniff present for dangerous type');
+
+    my $png = $head->('image/png');
+    is($png->header('content-disposition'), undef, 'inline-safe type not forced to download');
 };
 
 subtest 'handle_head_blob uses optional storage head_blob method' => sub {

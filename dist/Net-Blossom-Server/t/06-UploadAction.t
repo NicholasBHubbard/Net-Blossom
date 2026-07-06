@@ -163,6 +163,36 @@ subtest 'handle_upload maps Content-Length mismatch to BUD-02 bad request before
     is($upload->{aborted}, 1, 'mismatch aborts upload');
 };
 
+subtest 'handle_upload enforces max_upload_bytes with a 413' => sub {
+    my $storage = Local::Storage->new;
+    my $server = Net::Blossom::Server->new(
+        storage => $storage, max_upload_bytes => 4, clock => sub { 1725105921 });
+
+    my $error = dies {
+        $server->handle_upload(upload_request('oversized body'));
+    };
+    isa_ok($error, 'Net::Blossom::Server::Error');
+    is($error->status, 413, 'oversize upload rejected with 413');
+    my ($upload) = $storage->uploads;
+    is($upload->{commit}, undef, 'oversize upload does not commit');
+    is($upload->{aborted}, 1, 'oversize upload aborts');
+
+    my $ok_storage = Local::Storage->new;
+    my $ok_server = Net::Blossom::Server->new(
+        storage => $ok_storage, max_upload_bytes => 4, clock => sub { 1725105921 });
+    my $response = $ok_server->handle_upload(upload_request('byte'));
+    is($response->status, 201, 'upload exactly at the size limit succeeds');
+};
+
+subtest 'constructor validates max_upload_bytes' => sub {
+    like(dies {
+        Net::Blossom::Server->new(storage => Local::Storage->new, max_upload_bytes => 0);
+    }, qr/max_upload_bytes must be a positive integer/, 'zero rejected');
+    like(dies {
+        Net::Blossom::Server->new(storage => Local::Storage->new, max_upload_bytes => 'big');
+    }, qr/max_upload_bytes must be a positive integer/, 'non-integer rejected');
+};
+
 subtest 'handle_upload returns ok for existing blobs' => sub {
     my $storage = Local::Storage->new(existing => 1);
     my $server = Net::Blossom::Server->new(storage => $storage, clock => sub { 1725105921 });
