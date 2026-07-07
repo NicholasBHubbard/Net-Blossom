@@ -112,7 +112,7 @@ Inspect the active Perl layout:
 
 ## AI Usage
 
-This code was developed in part with AI tooling such as Claude Code and Codex. We want to be upfront about that.
+This code was developed in part with AI tooling such as Claude Code and Codex.
 
 ## License
 
