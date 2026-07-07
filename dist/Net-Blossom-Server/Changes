@@ -1,0 +1,6 @@
+Revision history for Net-Blossom-Server
+
+0.001000 2026-07-07
+    - Initial CPAN release.
+    - Add framework-neutral Blossom server support, PSGI integration,
+      authorization checks, request routing, and storage contracts.
