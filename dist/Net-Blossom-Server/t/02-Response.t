@@ -2,6 +2,7 @@ use strictures 2;
 
 use Test::More;
 
+use Net::Blossom::Server::Error;
 use Net::Blossom::Server::Response;
 
 sub dies(&) {
@@ -116,6 +117,10 @@ subtest 'validates response inputs' => sub {
         qr/headers must be a hash reference/, 'headers hash required');
     like(dies { Net::Blossom::Server::Response->new(status => 200, headers => { Good => [] }) },
         qr/header values must be scalars/, 'header values scalar');
+    like(dies { Net::Blossom::Server::Response->new(status => 200, headers => { Good => "ok\nbad" }) },
+        qr/header values must not contain CR or LF/, 'header values reject LF');
+    like(dies { Net::Blossom::Server::Response->new(status => 200, headers => { Good => "ok\rbad" }) },
+        qr/header values must not contain CR or LF/, 'header values reject CR');
     like(dies { Net::Blossom::Server::Response->new(status => 200, headers => { A => 1, a => 2 }) },
         qr/duplicate header/i, 'duplicate case-insensitive header rejected');
     like(dies { Net::Blossom::Server::Response->new(status => 200, body => [{}]) },
@@ -134,6 +139,28 @@ subtest 'validates response inputs' => sub {
         qr/unknown option\(s\): bogus/, 'redirect unknown option rejected');
     like(dies { Net::Blossom::Server::Response->error(404, 'missing', bogus => 1) },
         qr/unknown option\(s\): bogus/, 'error unknown option rejected');
+};
+
+subtest 'rejects unsafe error response headers' => sub {
+    like(dies { Net::Blossom::Server::Error->new(status => 400, headers => { Good => "ok\nbad" }) },
+        qr/header values must not contain CR or LF/, 'error header values reject LF');
+    like(dies { Net::Blossom::Server::Error->new(status => 400, headers => { Good => "ok\rbad" }) },
+        qr/header values must not contain CR or LF/, 'error header values reject CR');
+    like(dies { Net::Blossom::Server::Response->error(400, "bad\nreason") },
+        qr/header values must not contain CR or LF/, 'response error reason rejects LF before X-Reason header');
+    like(dies { Net::Blossom::Server::Error->new(status => 400, reason => "bad\nreason") },
+        qr/reason must not contain CR or LF/, 'typed error reason rejects LF');
+    like(dies { Net::Blossom::Server::Error->new(status => 400, reason => "bad\rreason")->as_response },
+        qr/reason must not contain CR or LF/, 'typed error reason rejects CR before X-Reason header');
+};
+
+subtest 'helper constructors validate explicit false statuses' => sub {
+    like(dies { Net::Blossom::Server::Response->json({ ok => 1 }, status => 0) },
+        qr/status must be an HTTP status code/, 'json rejects explicit zero status');
+    like(dies { Net::Blossom::Server::Response->text('ok', status => 0) },
+        qr/status must be an HTTP status code/, 'text rejects explicit zero status');
+    like(dies { Net::Blossom::Server::Response->redirect('/x', status => 0) },
+        qr/status must be an HTTP status code/, 'redirect rejects explicit zero status');
 };
 
 done_testing;

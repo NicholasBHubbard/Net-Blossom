@@ -38,7 +38,7 @@ sub json {
     _validate_options(\%opts, qw(status headers));
     my $body = $JSON->encode($data);
     return $class->new(
-        status  => delete($opts{status}) || 200,
+        status  => _status_option(\%opts, 200),
         headers => _headers_with_defaults(delete($opts{headers}), {
             'Content-Type'   => 'application/json',
             'Content-Length' => length($body),
@@ -54,7 +54,7 @@ sub text {
     $body = '' unless defined $body;
     croak "text body must be a scalar" if ref($body);
     return $class->new(
-        status  => delete($opts{status}) || 200,
+        status  => _status_option(\%opts, 200),
         headers => _headers_with_defaults(delete($opts{headers}), {
             'Content-Type'   => 'text/plain; charset=utf-8',
             'Content-Length' => length($body),
@@ -83,7 +83,7 @@ sub redirect {
     _validate_options(\%opts, qw(status headers));
     croak "location is required" unless defined $location && !ref($location) && length $location;
     return $class->new(
-        status  => delete($opts{status}) || 307,
+        status  => _status_option(\%opts, 307),
         headers => _headers_with_defaults(delete($opts{headers}), {
             Location         => $location,
             'Content-Length' => 0,
@@ -151,6 +151,8 @@ sub _normalize_headers {
             unless defined $name && !ref($name) && $name =~ /\A$TOKEN\z/;
         croak "header values must be defined" unless defined $headers->{$name};
         croak "header values must be scalars" if ref($headers->{$name});
+        croak "header values must not contain CR or LF"
+            if $headers->{$name} =~ /[\r\n]/;
 
         my $lower = lc $name;
         croak "duplicate header: $name" if exists $normalized{$lower};
@@ -201,6 +203,12 @@ sub _headers_with_defaults {
     return \%merged;
 }
 
+sub _status_option {
+    my ($opts, $default) = @_;
+    my $status = delete $opts->{status};
+    return defined $status ? $status : $default;
+}
+
 1;
 
 =pod
@@ -238,7 +246,8 @@ output protocol.
 Required C<status> must be an HTTP status code from C<100> through C<599>.
 
 Optional C<headers> defaults to an empty hash reference. Header names are
-case-insensitive and duplicate case-insensitive names croak.
+case-insensitive and duplicate case-insensitive names croak. Header values must
+be defined scalars and must not contain CR or LF.
 
 Optional C<body> defaults to the empty string. It may be a scalar byte string, an
 array reference of scalar byte strings, or a stream object that provides C<read>
@@ -279,7 +288,7 @@ required. The response includes C<Location> and C<Content-Length: 0>.
     my $response = Net::Blossom::Server::Response->error($status, $reason, %opts);
 
 Builds an empty error response. C<$reason>, when defined and non-empty, is sent
-as C<X-Reason>.
+as C<X-Reason> and therefore must not contain CR or LF.
 
 =head1 ACCESSORS
 

@@ -23,6 +23,7 @@ sub new {
 
     $args{reason} = '' unless defined $args{reason};
     croak "reason must be a scalar" if ref($args{reason});
+    croak "reason must not contain CR or LF" if $args{reason} =~ /[\r\n]/;
 
     $args{headers} = {} unless defined $args{headers};
     $args{_headers} = _normalize_headers($args{headers});
@@ -67,6 +68,8 @@ sub _normalize_headers {
             unless defined $name && !ref($name) && $name =~ /\A$TOKEN\z/;
         croak "header values must be defined" unless defined $headers->{$name};
         croak "header values must be scalars" if ref($headers->{$name});
+        croak "header values must not contain CR or LF"
+            if $headers->{$name} =~ /[\r\n]/;
 
         my $lower = lc $name;
         croak "duplicate header: $name" if exists $normalized{$lower};
@@ -111,8 +114,9 @@ failures and other controlled errors where the status code is part of the API.
 
 Required C<status> must be an HTTP status code from C<100> through C<599>.
 
-Optional C<reason> defaults to the empty string. Optional C<headers> defaults to
-an empty hash reference.
+Optional C<reason> defaults to the empty string and must not contain CR or LF.
+Optional C<headers> defaults to an empty hash reference. Header values must be
+defined scalars and must not contain CR or LF.
 
 Unknown arguments or invalid values croak.
 
