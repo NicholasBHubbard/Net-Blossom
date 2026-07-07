@@ -319,7 +319,7 @@ header is absent.
 
     my $pairs = $response->header_pairs;
 
-Returns an array reference suitable for PSGI-style C<[name => value, ...]>
+Returns an array reference suitable for PSGI-style C<< [name => value, ...] >>
 headers.
 
 =head2 body_chunks

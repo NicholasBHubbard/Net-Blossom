@@ -891,7 +891,7 @@ Sends a C<Range> header.
 
 =item * C<payment>
 
-Hash reference of payment proof headers. See L</Payment Proofs>.
+Hash reference of payment proof headers. See L</PAYMENT PROOFS>.
 
 =back
 
@@ -922,7 +922,7 @@ Media type for C<Content-Type>. Defaults to C<application/octet-stream>.
 
 =item * C<payment>
 
-Hash reference of payment proof headers. See L</Payment Proofs>.
+Hash reference of payment proof headers. See L</PAYMENT PROOFS>.
 
 =back
 
