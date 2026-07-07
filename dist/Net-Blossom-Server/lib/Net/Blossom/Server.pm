@@ -362,22 +362,10 @@ sub handle_mirror {
         unless exists $data->{url} && defined $data->{url} && !ref($data->{url}) && length $data->{url}
         && _valid_mirror_url($data->{url});
 
-    my $fetched = eval {
-        my $result = _fetch_mirror_blob($self->mirror_fetcher, $data->{url});
-        _mirror_fetch_result($result);
-    };
-    if ($@) {
-        return $@->as_response
-            if blessed($@) && $@->isa('Net::Blossom::Server::Error');
-        return Net::Blossom::Server::Response->error(502, 'Origin fetch failed');
-    }
-
-    my ($body, %fetch_opts) = @$fetched;
-    my %upload_opts = %fetch_opts;
-    if (defined $upload_opts{content_length}) {
-        $upload_opts{content_length_mismatch_status} = 502;
-        $upload_opts{content_length_mismatch_reason} = 'origin content length mismatch';
-    }
+    my %upload_opts = (
+        content_length_mismatch_status => 502,
+        content_length_mismatch_reason => 'origin content length mismatch',
+    );
     $upload_opts{pubkey} = $opts{pubkey} if defined $opts{pubkey};
     if (defined $opts{authorization}) {
         $upload_opts{allowed_sha256} = $opts{authorization}->hashes;
@@ -385,7 +373,31 @@ sub handle_mirror {
         $upload_opts{sha256_mismatch_reason} = 'mirrored blob hash is not authorized';
     }
 
-    my $result = $self->receive_blob($body, %upload_opts);
+    my $sink = Net::Blossom::Server::_MirrorSink->new(
+        server => $self,
+        opts   => \%upload_opts,
+    );
+    my $metadata = eval {
+        _mirror_fetch_metadata(
+            _fetch_mirror_blob($self->mirror_fetcher, $data->{url}, sink => $sink),
+        );
+    };
+    if ($@) {
+        my $error = $@;
+        eval { $sink->abort };
+        return $error->as_response
+            if blessed($error) && $error->isa('Net::Blossom::Server::Error');
+        return Net::Blossom::Server::Response->error(502, 'Origin fetch failed');
+    }
+
+    $sink->start(%$metadata) unless $sink->started;
+    my $result = eval { $sink->finish };
+    if (!$result) {
+        my $error = $@;
+        eval { $sink->abort };
+        die $error;
+    }
+
     return Net::Blossom::Server::Response->json(
         $result->descriptor->to_hash,
         status => $result->created ? 201 : 200,
@@ -671,16 +683,15 @@ sub _valid_mirror_url {
 }
 
 sub _fetch_mirror_blob {
-    my ($fetcher, $url) = @_;
-    return $fetcher->($url) if ref($fetcher) eq 'CODE';
-    return $fetcher->fetch_blob($url);
+    my ($fetcher, $url, %opts) = @_;
+    return $fetcher->($url, %opts) if ref($fetcher) eq 'CODE';
+    return $fetcher->fetch_blob($url, %opts);
 }
 
-sub _mirror_fetch_result {
+sub _mirror_fetch_metadata {
     my ($result) = @_;
     croak "mirror fetcher must return a hash reference" unless ref($result) eq 'HASH';
-    croak "mirror fetcher result body is required" unless exists $result->{body} && defined $result->{body};
-    _validate_body($result->{body});
+    croak "mirror fetcher must stream into sink, not return body" if exists $result->{body};
 
     my %opts;
     if (defined $result->{type}) {
@@ -693,7 +704,7 @@ sub _mirror_fetch_result {
         $opts{content_length} = $result->{content_length};
     }
 
-    return [$result->{body}, %opts];
+    return \%opts;
 }
 
 sub _copy_body_to_upload {
@@ -853,6 +864,124 @@ sub _validate_pubkey {
     croak "pubkey must be 64-char lowercase hex" unless $pubkey =~ $HEX64;
 }
 
+{
+    package Net::Blossom::Server::_MirrorSink;
+
+    use strictures 2;
+
+    use Carp qw(croak);
+
+    sub new {
+        my ($class, %args) = @_;
+        croak "server is required" unless defined $args{server};
+        croak "opts must be a hash reference" unless ref($args{opts}) eq 'HASH';
+
+        return bless {
+            server    => $args{server},
+            opts      => $args{opts},
+            sha       => Digest::SHA->new(256),
+            size      => 0,
+            started   => 0,
+            committed => 0,
+        }, $class;
+    }
+
+    sub started {
+        my ($self) = @_;
+        return $self->{started};
+    }
+
+    sub start {
+        my $self = shift;
+        my %metadata = @_;
+        my %known = map { $_ => 1 } qw(type content_length);
+        my @unknown = grep { !exists $known{$_} } keys %metadata;
+        croak "unknown mirror metadata: " . join(', ', sort @unknown) if @unknown;
+        croak "mirror sink already started" if $self->{started};
+
+        my $type = defined $metadata{type} ? $metadata{type} : 'application/octet-stream';
+        croak "mirror content type must be a scalar" if ref($type);
+        croak "mirror content type is required" unless length $type;
+
+        Net::Blossom::Server::_validate_content_length($metadata{content_length})
+            if defined $metadata{content_length};
+
+        my %context = (type => $type);
+        $context{content_length} = $metadata{content_length} if defined $metadata{content_length};
+        $context{pubkey} = $self->{opts}{pubkey} if defined $self->{opts}{pubkey};
+        $context{allowed_sha256} = [@{$self->{opts}{allowed_sha256}}]
+            if defined $self->{opts}{allowed_sha256};
+
+        my $upload = $self->{server}->storage->begin_upload(%context);
+        Net::Blossom::Server::Storage->assert_upload($upload);
+
+        $self->{upload} = $upload;
+        $self->{type} = $type;
+        $self->{content_length} = $metadata{content_length};
+        $self->{started} = 1;
+        return 1;
+    }
+
+    sub write {
+        my ($self, $chunk) = @_;
+        croak "mirror sink must be started before write" unless $self->{started};
+        croak "mirror body chunks must be scalars" if ref($chunk);
+
+        my $new_size = $self->{size} + length($chunk);
+        my $max = $self->{server}->max_upload_bytes;
+        Net::Blossom::Server::_upload_too_large()
+            if defined $max && $new_size > $max;
+
+        Net::Blossom::Server::_write_upload_chunk($self->{upload}, $self->{sha}, $chunk);
+        $self->{size} = $new_size;
+        return length $chunk;
+    }
+
+    sub finish {
+        my ($self) = @_;
+        $self->start unless $self->{started};
+
+        my %opts = %{$self->{opts}};
+        $opts{content_length} = $self->{content_length} if defined $self->{content_length};
+        Net::Blossom::Server::_content_length_mismatch(%opts)
+            if defined $self->{content_length} && $self->{size} != $self->{content_length};
+
+        my $sha256 = $self->{sha}->hexdigest;
+        Net::Blossom::Server::_sha256_mismatch(%opts, default_reason => 'sha256 is not allowed')
+            if defined $opts{allowed_sha256}
+            && !grep { $_ eq $sha256 } @{$opts{allowed_sha256}};
+
+        my $uploaded = defined $opts{uploaded} ? $opts{uploaded} : $self->{server}->clock->();
+        my %commit_metadata = (
+            sha256   => $sha256,
+            size     => $self->{size},
+            type     => $self->{type},
+            uploaded => $uploaded,
+        );
+        $commit_metadata{pubkey} = $opts{pubkey} if defined $opts{pubkey};
+
+        my $result = Net::Blossom::Server::_upload_result_from_commit(
+            $self->{upload}->commit(%commit_metadata),
+        );
+        Net::Blossom::Server::_validate_committed_descriptor(
+            $result->descriptor,
+            $sha256,
+            $self->{size},
+            $self->{type},
+        );
+
+        $self->{committed} = 1;
+        return $result;
+    }
+
+    sub abort {
+        my ($self) = @_;
+        return 1 unless $self->{started};
+        return 1 if $self->{committed};
+        return $self->{upload}->abort;
+    }
+}
+
 1;
 
 =pod
@@ -910,7 +1039,8 @@ Code reference returning the upload timestamp. Defaults to C<time>.
 =item * C<mirror_fetcher>
 
 Optional code reference or object with C<fetch_blob>. This is required for
-C<PUT /mirror>. No default network fetcher is provided.
+C<PUT /mirror>. Mirror fetchers stream origin bytes into a server-provided sink;
+no default network fetcher is provided.
 
 =item * C<max_upload_bytes>
 
@@ -1117,15 +1247,20 @@ Handles a normalized C<PUT /mirror> request. The request body must be a JSON
 object with a C<url> field. The URL must use C<http> or C<https>, have a host,
 must not include userinfo, and must not include a fragment.
 
-The server calls the configured C<mirror_fetcher> and stores the returned body
-through C<receive_blob>, so SHA-256 calculation remains owned by the server
-core. A missing C<mirror_fetcher> returns C<503>. Malformed mirror requests
-return C<400>. Origin fetch failures, unusable fetch results, or origin
-content-length mismatches return C<502>.
+The server calls the configured C<mirror_fetcher> with a streaming sink and stores
+origin bytes as the fetcher writes them. SHA-256 calculation and storage commit
+remain owned by the server core. A missing C<mirror_fetcher> returns C<503>.
+Malformed mirror requests return C<400>. Origin fetch failures, unusable fetch
+results, or origin content-length mismatches return C<502>.
 
-The fetcher may be a code reference called as C<< $fetcher->($url) >> or an
-object called as C<< $fetcher->fetch_blob($url) >>. It must return a hash
-reference with C<body> and may include C<type> and C<content_length>.
+The fetcher may be a code reference called with C<$url> and C<< sink => $sink >>,
+or an object called as C<< $fetcher->fetch_blob($url, sink => $sink) >>. It must
+call C<< $sink->start(%metadata) >> before writing bytes, then call
+C<< $sink->write($chunk) >> for each scalar byte chunk. C<%metadata> may include
+C<type> and C<content_length>; missing C<type> defaults to
+C<application/octet-stream>. For empty origin bodies, the fetcher may instead
+return a metadata hash reference and let the server start the sink. Returning a
+C<body> value is not supported.
 
 Options:
 

@@ -293,8 +293,10 @@ subtest 'handle_request dispatches PUT /mirror' => sub {
     my $server = Net::Blossom::Server->new(
         storage        => $storage,
         mirror_fetcher => sub {
+            my ($url, %opts) = @_;
+            $opts{sink}->start(type => 'text/plain', content_length => length($body));
+            $opts{sink}->write($body);
             return {
-                body           => $body,
                 type           => 'text/plain',
                 content_length => length($body),
             };

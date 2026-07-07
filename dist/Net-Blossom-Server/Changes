@@ -1,5 +1,9 @@
 Revision history for Net-Blossom-Server
 
+{{$NEXT}}
+    - Change mirror fetchers to stream origin bytes into a server-provided sink
+      instead of returning a buffered body scalar.
+
 0.001000 2026-07-07
     - Initial CPAN release.
     - Add framework-neutral Blossom server support, PSGI integration,

@@ -497,8 +497,10 @@ subtest 'PSGI app passes BUD-11 mirror authorization result for deferred hash ch
         server        => Net::Blossom::Server->new(
             storage        => $storage,
             mirror_fetcher => sub {
+                my ($url, %opts) = @_;
+                $opts{sink}->start(type => 'text/plain', content_length => length($body));
+                $opts{sink}->write($body);
                 return {
-                    body           => $body,
                     type           => 'text/plain',
                     content_length => length($body),
                 };
@@ -537,7 +539,12 @@ subtest 'PSGI app maps BUD-11 mirror hash conflicts to 409 responses' => sub {
     my $app = Net::Blossom::Server::PSGI->new(
         server        => Net::Blossom::Server->new(
             storage        => $storage,
-            mirror_fetcher => sub { return { body => $body } },
+            mirror_fetcher => sub {
+                my ($url, %opts) = @_;
+                $opts{sink}->start(type => 'application/octet-stream', content_length => length($body));
+                $opts{sink}->write($body);
+                return { type => 'application/octet-stream', content_length => length($body) };
+            },
         ),
         authorization => Net::Blossom::Server::Authorization->new(clock => sub { $NOW }),
     )->to_app;

@@ -66,7 +66,15 @@ sub allowed_hosts {
 }
 
 sub fetch_blob {
-    my ($self, $url) = @_;
+    my $self = shift;
+    my ($url, %opts) = @_;
+    my %known = map { $_ => 1 } qw(sink);
+    my @unknown = grep { !exists $known{$_} } keys %opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
+    croak "sink is required" unless defined $opts{sink};
+    croak "sink must provide start and write"
+        unless blessed($opts{sink}) && $opts{sink}->can('start') && $opts{sink}->can('write');
+
     my $uri = _validated_url($url);
     my $host = lc $uri->host;
 
@@ -83,21 +91,41 @@ sub fetch_blob {
         reason => 'Mirror URL port is not allowed',
     ) if $uri->port != $uri->default_port;
 
-    my $body = '';
+    my $started = 0;
+    my $size = 0;
+    my %metadata;
+    my $sink_error;
     my $response = eval {
         local @ENV{qw(http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY)};
         delete @ENV{qw(http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY)};
 
         $self->user_agent->request('GET', $url, {
             data_callback => sub {
-                my ($chunk) = @_;
+                my ($chunk, $response) = @_;
                 croak "response chunks must be scalars" if ref($chunk);
-                $body .= $chunk;
-                _too_large() if length($body) > $self->max_bytes;
+
+                _ensure_successful_response($response);
+                if (!$started) {
+                    %metadata = _metadata_from_response($response, $self->max_bytes);
+                    eval { $opts{sink}->start(%metadata); 1 } or do {
+                        $sink_error = $@;
+                        die $sink_error;
+                    };
+                    $started = 1;
+                }
+
+                my $new_size = $size + length($chunk);
+                _too_large() if $new_size > $self->max_bytes;
+                eval { $opts{sink}->write($chunk); 1 } or do {
+                    $sink_error = $@;
+                    die $sink_error;
+                };
+                $size = $new_size;
             },
         });
     };
     if ($@) {
+        die $sink_error if defined $sink_error;
         die $@ if blessed($@) && $@->isa('Net::Blossom::Server::Error');
         Net::Blossom::Server::Error->throw(
             status => 502,
@@ -105,30 +133,13 @@ sub fetch_blob {
         );
     }
 
-    Net::Blossom::Server::Error->throw(
-        status => 502,
-        reason => 'Origin response was not successful',
-    ) unless ref($response) eq 'HASH' && $response->{success};
+    _ensure_successful_response($response);
 
-    my $headers = ref($response->{headers}) eq 'HASH' ? $response->{headers} : {};
-    my $content_length = _header($headers, 'content-length');
-    if (defined $content_length) {
-        Net::Blossom::Server::Error->throw(
-            status => 502,
-            reason => 'Origin Content-Length is invalid',
-        ) unless $content_length =~ /\A\d+\z/;
-        _too_large() if $content_length > $self->max_bytes;
+    if (!$started) {
+        %metadata = _metadata_from_response($response, $self->max_bytes);
+        $opts{sink}->start(%metadata);
     }
-
-    my $type = _header($headers, 'content-type');
-    $type = 'application/octet-stream' unless defined $type && length $type;
-
-    my %result = (
-        body => $body,
-        type => $type,
-    );
-    $result{content_length} = $content_length if defined $content_length;
-    return \%result;
+    return \%metadata;
 }
 
 sub _validated_url {
@@ -160,6 +171,34 @@ sub _header {
     $value = $headers->{lc $name} unless defined $value;
     $value = $value->[0] if ref($value) eq 'ARRAY';
     return $value;
+}
+
+sub _ensure_successful_response {
+    my ($response) = @_;
+    Net::Blossom::Server::Error->throw(
+        status => 502,
+        reason => 'Origin response was not successful',
+    ) unless ref($response) eq 'HASH' && $response->{success};
+}
+
+sub _metadata_from_response {
+    my ($response, $max_bytes) = @_;
+    my $headers = ref($response->{headers}) eq 'HASH' ? $response->{headers} : {};
+    my $content_length = _header($headers, 'content-length');
+    if (defined $content_length) {
+        Net::Blossom::Server::Error->throw(
+            status => 502,
+            reason => 'Origin Content-Length is invalid',
+        ) unless $content_length =~ /\A\d+\z/;
+        _too_large() if $content_length > $max_bytes;
+    }
+
+    my $type = _header($headers, 'content-type');
+    $type = 'application/octet-stream' unless defined $type && length $type;
+
+    my %metadata = (type => $type);
+    $metadata{content_length} = $content_length if defined $content_length;
+    return %metadata;
 }
 
 sub _too_large {
@@ -208,7 +247,7 @@ internet mirroring by default.
 The fetcher validates the URL before making a request, requires the URL host to
 match one of the configured C<allowed_hosts>, disables redirects in the default
 HTTP client, clears common proxy environment variables while fetching, and
-enforces a maximum response size while streaming.
+enforces a maximum response size while streaming into the supplied sink.
 
 =head1 CONSTRUCTOR
 
@@ -275,11 +314,13 @@ Returns the HTTP transport object.
 
 =head2 fetch_blob
 
-    my $result = $fetcher->fetch_blob($url);
+    my $metadata = $fetcher->fetch_blob($url, sink => $sink);
 
-Fetches an allowed C<http> or C<https> URL and returns a hash reference with
-C<body>, C<type>, and optional C<content_length>. Missing C<Content-Type>
-defaults to C<application/octet-stream>.
+Fetches an allowed C<http> or C<https> URL, calls
+C<< $sink->start(%metadata) >>, streams scalar byte chunks through
+C<< $sink->write($chunk) >>, and returns a metadata hash reference with C<type>
+and optional C<content_length>. Missing C<Content-Type> defaults to
+C<application/octet-stream>. A C<body> value is never returned.
 
 The method throws L<Net::Blossom::Server::Error> for expected HTTP-facing
 failures: C<400> for malformed URLs, C<403> for non-allowlisted hosts, C<413>

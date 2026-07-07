@@ -105,10 +105,23 @@ sub dies(&) {
     }
 
     sub fetch_blob {
-        my ($self, $url) = @_;
+        my ($self, $url, %opts) = @_;
         push @{$self->{urls}}, $url;
         die "origin failed" if $self->{fail};
-        return $self->{response};
+        die "sink is required" unless defined $opts{sink};
+
+        my $response = $self->{response} || {};
+        my %metadata;
+        $metadata{type} = $response->{type} if defined $response->{type};
+        $metadata{content_length} = $response->{content_length} if defined $response->{content_length};
+        $opts{sink}->start(%metadata);
+
+        my @chunks = exists $response->{body_chunks}
+            ? @{$response->{body_chunks}}
+            : (defined $response->{body} ? ($response->{body}) : ());
+        $opts{sink}->write($_) for @chunks;
+
+        return \%metadata;
     }
 
     sub request {
@@ -138,10 +151,11 @@ sub authorization {
 }
 
 subtest 'handle_mirror fetches a remote URL and stores the downloaded blob' => sub {
-    my $body = "mirrored bytes\n";
+    my @chunks = ('mirrored ', "bytes\n");
+    my $body = join '', @chunks;
     my $sha256 = sha256_hex($body);
     my $fetcher = Local::Fetcher->new(response => {
-        body           => $body,
+        body_chunks    => \@chunks,
         type           => 'text/plain',
         content_length => length($body),
     });
@@ -168,7 +182,7 @@ subtest 'handle_mirror fetches a remote URL and stores the downloaded blob' => s
     is($upload->{context}{content_length}, length($body), 'origin content length passed to storage');
     is($upload->{context}{pubkey}, $PUBKEY, 'pubkey passed to storage');
     is_deeply($upload->{context}{allowed_sha256}, [$sha256], 'authorized hashes passed to storage');
-    is_deeply($upload->{chunks}, [$body], 'origin body written to storage');
+    is_deeply($upload->{chunks}, \@chunks, 'origin body streamed to storage');
 };
 
 subtest 'handle_mirror returns ok for existing mirrored blobs' => sub {
@@ -197,7 +211,12 @@ subtest 'handle_mirror fails closed without a configured fetcher' => sub {
 subtest 'handle_mirror maps malformed client input to BUD-04 errors' => sub {
     my $server = Net::Blossom::Server->new(
         storage        => Local::Storage->new,
-        mirror_fetcher => sub { return { body => 'body' } },
+        mirror_fetcher => sub {
+            my ($url, %opts) = @_;
+            $opts{sink}->start(type => 'text/plain', content_length => length 'body');
+            $opts{sink}->write('body');
+            return { type => 'text/plain', content_length => length 'body' };
+        },
     );
 
     is($server->handle_mirror(mirror_request(undef, body => 'not json'))->status, 400,
