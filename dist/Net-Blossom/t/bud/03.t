@@ -6,6 +6,7 @@ use JSON ();
 
 use Net::Blossom::Client;
 use Net::Blossom::ServerList;
+use Net::Nostr::Event;
 
 sub dies(&) {
     my ($code) = @_;
@@ -55,14 +56,15 @@ sub server_list {
 }
 
 subtest 'BUD-03 user server list preserves trusted server order' => sub {
-    my $list = Net::Blossom::ServerList->from_event({
+    my $list = Net::Blossom::ServerList->from_event(Net::Nostr::Event->new(
+        pubkey  => $AUTHOR,
         kind    => 10063,
         content => '',
         tags    => [
             ['server', 'https://cdn.self.hosted'],
             ['server', 'https://cdn.satellite.earth'],
         ],
-    });
+    ));
 
     is_deeply(
         $list->servers,

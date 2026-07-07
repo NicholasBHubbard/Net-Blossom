@@ -3,6 +3,7 @@ use strictures 2;
 use Test::More;
 
 use Net::Blossom::ServerList;
+use Net::Nostr::Event;
 
 sub dies(&) {
     my ($code) = @_;
@@ -14,7 +15,7 @@ my $PUBKEY = '781208004e09102d7da3b7345e64fd193cd1bc3fce8fdae6008d77f9cabcd036';
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
 
 sub bud03_event {
-    return {
+    return Net::Nostr::Event->new(
         id         => 'e4bee088334cb5d38cff1616e964369c37b6081be997962ab289d6c671975d71',
         pubkey     => $PUBKEY,
         content    => '',
@@ -25,7 +26,7 @@ sub bud03_event {
             ['server', 'https://cdn.satellite.earth'],
         ],
         sig        => 'cc5efa74f59e80622c77cacf4dd62076bcb7581b45e9acff471e7963a1f4d8b3406adab5ee1ac9673487480e57d20e523428e60ffcc7e7a904ac882cfccfc653',
-    };
+    );
 }
 
 subtest 'parses BUD-03 kind 10063 server list event' => sub {
@@ -83,11 +84,18 @@ subtest 'validates BUD-03 server list inputs' => sub {
     like(dies { Net::Blossom::ServerList->new(servers => []) },
         qr/at least one server/, 'at least one server required');
     like(dies { Net::Blossom::ServerList->new(servers => ['cdn.example.com']) },
-        qr/http\(s\)/, 'scheme required');
+        qr/server url must use http or https/, 'scheme required');
     like(dies { Net::Blossom::ServerList->new(servers => ['ftp://cdn.example.com']) },
-        qr/http\(s\)/, 'non-http scheme rejected');
+        qr/server url must use http or https/, 'non-http scheme rejected');
     like(dies { Net::Blossom::ServerList->new(servers => ['https://cdn.example.com?bad=1']) },
-        qr/base URL/, 'query rejected');
+        qr/server url must not include a query/, 'query rejected');
+
+    like(dies {
+        Net::Blossom::ServerList->from_event({
+            kind => 10063,
+            tags => [['server', 'https://cdn.example.com']],
+        });
+    }, qr/Net::Nostr::Event/, 'plain hash events are rejected');
 
     my $event = bud03_event();
     $event->{kind} = 1;
@@ -107,7 +115,7 @@ subtest 'validates BUD-03 server list inputs' => sub {
     $event = bud03_event();
     $event->{tags} = [['server']];
     like(dies { Net::Blossom::ServerList->from_event($event) },
-        qr/server tag must include URL/, 'server tag value required');
+        qr/server tag requires a URL/, 'server tag value required');
 };
 
 subtest 'extracts the last 64-char hex hash from URLs' => sub {
