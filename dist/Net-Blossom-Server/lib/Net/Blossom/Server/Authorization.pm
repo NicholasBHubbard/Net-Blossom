@@ -8,7 +8,7 @@ use Net::Blossom::Server::Error;
 use Net::Blossom::Server::Request;
 
 use Carp qw(croak);
-use Class::Tiny qw(_domains clock);
+use Class::Tiny qw(_domains clock clock_skew_seconds);
 use JSON ();
 use MIME::Base64 qw(decode_base64);
 use Net::Nostr::Event;
@@ -21,7 +21,7 @@ my $JSON = JSON->new->utf8;
 sub new {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
-    my %known = map { $_ => 1 } qw(domains clock);
+    my %known = map { $_ => 1 } qw(domains clock clock_skew_seconds);
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
 
@@ -36,6 +36,10 @@ sub new {
 
     $args{clock} = sub { time } unless defined $args{clock};
     croak "clock must be a code reference" unless ref($args{clock}) eq 'CODE';
+
+    $args{clock_skew_seconds} = 30 unless defined $args{clock_skew_seconds};
+    croak "clock_skew_seconds must be a non-negative integer"
+        unless $args{clock_skew_seconds} =~ /\A\d+\z/;
 
     return bless \%args, $class;
 }
@@ -167,8 +171,12 @@ sub _validate_event {
 
     _unauthorized('authorization kind must be 24242')
         unless $event->kind == 24242;
-    _unauthorized('authorization created_at must be in the past')
-        unless $event->created_at < $now;
+    my $clock_skew_seconds = $self->clock_skew_seconds;
+    my $created_at_ok = $clock_skew_seconds
+        ? $event->created_at <= $now + $clock_skew_seconds
+        : $event->created_at < $now;
+    _unauthorized('authorization created_at is too far in the future')
+        unless $created_at_ok;
 
     my $expiration = _first_tag_value($event, 'expiration');
     _unauthorized('authorization expiration tag is required')
@@ -295,6 +303,12 @@ BUD-11 C<server> tags. They are domains only, not URLs.
 
 Code reference returning the current Unix timestamp. Defaults to C<time>.
 
+=item * C<clock_skew_seconds>
+
+Non-negative integer number of seconds by which C<created_at> may be ahead of
+the verifier clock. Defaults to C<30>. Set to C<0> to require C<created_at> to
+be strictly in the past.
+
 =back
 
 Unknown arguments or invalid values croak.
@@ -308,6 +322,10 @@ Returns a copy array reference of configured server domains.
 =head2 clock
 
 Returns the clock code reference.
+
+=head2 clock_skew_seconds
+
+Returns the accepted C<created_at> clock skew in seconds.
 
 =head1 METHODS
 

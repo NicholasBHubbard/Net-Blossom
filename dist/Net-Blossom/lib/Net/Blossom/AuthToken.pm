@@ -56,7 +56,7 @@ sub new {
     croak "$args{action} authorization requires at least one hash"
         if $args{action} =~ /\A(?:upload|delete|media)\z/ && !@{$args{hashes}};
 
-    $args{created_at} = time() unless defined $args{created_at};
+    $args{created_at} = time() - 1 unless defined $args{created_at};
     croak "created_at must be a non-negative integer"
         unless $args{created_at} =~ /\A\d+\z/;
 
@@ -178,7 +178,7 @@ C<delete>, and C<media> authorizations require at least one hash.
 
 =item * C<created_at>
 
-Unix timestamp for the Nostr event. Defaults to C<time>.
+Unix timestamp for the Nostr event. Defaults to the previous Unix second.
 
 =back
 

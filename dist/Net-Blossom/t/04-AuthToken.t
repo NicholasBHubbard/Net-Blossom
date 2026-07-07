@@ -4,6 +4,10 @@ use Test::More;
 use JSON ();
 use MIME::Base64 qw(decode_base64);
 
+BEGIN {
+    *CORE::GLOBAL::time = sub { 2_000_000_000 };
+}
+
 use Net::Blossom::AuthToken;
 
 sub dies(&) {
@@ -50,8 +54,9 @@ sub dies(&) {
 
 my $PUBKEY = '79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 my $HASH = 'b1674191a88ec5cdd733e4240a81803105dc412d6c6708d53ab94fc248f4f553';
-my $FUTURE = time + 3600;
-my $PAST = time - 1;
+my $NOW = time;
+my $FUTURE = $NOW + 3600;
+my $PAST = $NOW - 1;
 
 sub decode_b64url {
     my ($value) = @_;
@@ -85,6 +90,19 @@ subtest 'creates signed BUD-11 kind 24242 event' => sub {
         ['server', 'cdn.example.com'],
         ['x', $HASH],
     ], 'tags');
+};
+
+subtest 'defaults BUD-11 created_at to the previous second' => sub {
+    my $key = Local::Key->new($PUBKEY);
+    my $token = Net::Blossom::AuthToken->new(
+        key        => $key,
+        action     => 'get',
+        content    => 'Get Blob',
+        expiration => $FUTURE,
+    );
+
+    is($token->created_at, $NOW - 1, 'token default created_at is immediately in the past');
+    is($token->to_event->created_at, $NOW - 1, 'event uses the default created_at');
 };
 
 subtest 'creates BUD-11 server-scoped events with multiple server tags' => sub {

@@ -4,6 +4,10 @@ use Test::More;
 use JSON ();
 use MIME::Base64 qw(encode_base64);
 
+BEGIN {
+    *CORE::GLOBAL::time = sub { 2_000_000_000 };
+}
+
 use Net::Blossom::AuthToken;
 use Net::Blossom::Server::Authorization;
 use Net::Blossom::Server::Error;
@@ -94,6 +98,7 @@ subtest 'constructs BUD-11 authorizer and typed errors' => sub {
     );
     isa_ok($auth, 'Net::Blossom::Server::Authorization');
     is_deeply($auth->domains, ['cdn.example.com'], 'domain accessor returns copy');
+    is($auth->clock_skew_seconds, 30, 'default created_at clock skew');
 
     my $domains = $auth->domains;
     push @$domains, 'mutated.example.com';
@@ -115,6 +120,10 @@ subtest 'constructs BUD-11 authorizer and typed errors' => sub {
         qr/domain must be a lowercase domain name/, 'domain URLs rejected');
     like(dies { Net::Blossom::Server::Authorization->new(clock => 'time') },
         qr/clock must be a code reference/, 'clock coderef required');
+    like(dies { Net::Blossom::Server::Authorization->new(clock_skew_seconds => -1) },
+        qr/clock_skew_seconds must be a non-negative integer/, 'negative clock skew rejected');
+    like(dies { Net::Blossom::Server::Authorization->new(clock_skew_seconds => '1.5') },
+        qr/clock_skew_seconds must be a non-negative integer/, 'fractional clock skew rejected');
     like(dies { Net::Blossom::Server::Authorization->new(bogus => 1) },
         qr/unknown argument\(s\): bogus/, 'unknown argument rejected');
 };
@@ -184,6 +193,77 @@ subtest 'authorizes implemented Blossom endpoints' => sub {
     )), $key->pubkey_hex, 'media preflight token uses X-SHA-256 hash');
 };
 
+subtest 'authorizes fresh client AuthToken in the same second' => sub {
+    my $key = Net::Nostr::Key->new;
+    my $auth = Net::Blossom::Server::Authorization->new(clock => sub { $NOW });
+    my $header = Net::Blossom::AuthToken->new(
+        key        => $key,
+        action     => 'get',
+        content    => 'Authorize Blossom request',
+        expiration => $NOW + 3600,
+    )->authorization_header;
+
+    my $pubkey = eval { $auth->authorize_request(request(
+        method        => 'GET',
+        path          => "/$SHA256",
+        authorization => $header,
+    )) };
+    my $error = $@;
+
+    is($error, '', 'fresh AuthToken default created_at is not rejected');
+    is($pubkey, $key->pubkey_hex, 'fresh AuthToken default created_at is accepted');
+};
+
+subtest 'allows configurable created_at clock skew' => sub {
+    my $key = Net::Nostr::Key->new;
+    my $auth = Net::Blossom::Server::Authorization->new(clock => sub { $NOW });
+
+    my $default_pubkey = eval { $auth->authorize_request(request(
+        method        => 'GET',
+        path          => "/$SHA256",
+        authorization => signed_header($key, action => 'get', created_at => $NOW + 30),
+    )) };
+    my $default_error = $@;
+
+    is($default_error, '', 'default leeway does not reject created_at thirty seconds ahead');
+    is($default_pubkey, $key->pubkey_hex, 'default leeway accepts created_at thirty seconds ahead');
+
+    is(error_status { $auth->authorize_request(request(
+        method        => 'GET',
+        path          => "/$SHA256",
+        authorization => signed_header($key, action => 'get', created_at => $NOW + 31),
+    )) }, 401, 'default leeway rejects created_at more than thirty seconds ahead');
+
+    my $strict_auth = Net::Blossom::Server::Authorization->new(
+        clock              => sub { $NOW },
+        clock_skew_seconds => 0,
+    );
+    is(error_status { $strict_auth->authorize_request(request(
+        method        => 'GET',
+        path          => "/$SHA256",
+        authorization => signed_header($key, action => 'get', created_at => $NOW),
+    )) }, 401, 'zero leeway preserves strict past-only behavior');
+
+    my $custom_auth = Net::Blossom::Server::Authorization->new(
+        clock              => sub { $NOW },
+        clock_skew_seconds => 5,
+    );
+    my $custom_pubkey = eval { $custom_auth->authorize_request(request(
+        method        => 'GET',
+        path          => "/$SHA256",
+        authorization => signed_header($key, action => 'get', created_at => $NOW + 5),
+    )) };
+    my $custom_error = $@;
+
+    is($custom_error, '', 'custom leeway does not reject created_at at its boundary');
+    is($custom_pubkey, $key->pubkey_hex, 'custom leeway accepts created_at at its boundary');
+    is(error_status { $custom_auth->authorize_request(request(
+        method        => 'GET',
+        path          => "/$SHA256",
+        authorization => signed_header($key, action => 'get', created_at => $NOW + 6),
+    )) }, 401, 'custom leeway rejects created_at past its boundary');
+};
+
 subtest 'returns rich authorization results for deferred mirror hash checks' => sub {
     my $key = Net::Nostr::Key->new;
     my $auth = Net::Blossom::Server::Authorization->new(
@@ -238,8 +318,8 @@ subtest 'rejects invalid BUD-11 events' => sub {
     is(error_status { $auth->authorize_request(request(
         method        => 'GET',
         path          => "/$SHA256",
-        authorization => signed_header($key, action => 'get', created_at => $NOW + 1),
-    )) }, 401, 'future created_at rejected');
+        authorization => signed_header($key, action => 'get', created_at => $NOW + 31),
+    )) }, 401, 'created_at beyond default clock skew rejected');
 
     is(error_status { $auth->authorize_request(request(
         method        => 'GET',
