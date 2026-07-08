@@ -14,7 +14,7 @@ use Net::Blossom::Server::Storage;
 use Net::Blossom::Server::UploadResult;
 
 use Carp qw(croak);
-use Class::Tiny qw(storage chunk_size clock mirror_fetcher max_upload_bytes);
+use Class::Tiny qw(storage chunk_size clock mirror_fetcher max_upload_bytes max_list_limit);
 use Digest::SHA ();
 use JSON ();
 use Scalar::Util qw(blessed);
@@ -25,6 +25,7 @@ our $VERSION = '0.001000';
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $JSON = JSON->new->utf8;
 my $MAX_MIRROR_REQUEST_BYTES = 65536;
+my $DEFAULT_MAX_LIST_LIMIT = 100;
 
 # Content types a browser renders as active content (can execute script) when
 # served inline. Blobs are attacker-supplied, so these are sent as downloads
@@ -65,7 +66,7 @@ sub _blob_response_headers {
 sub new {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
-    my %known = map { $_ => 1 } qw(storage chunk_size clock mirror_fetcher max_upload_bytes);
+    my %known = map { $_ => 1 } qw(storage chunk_size clock mirror_fetcher max_upload_bytes max_list_limit);
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
 
@@ -74,6 +75,10 @@ sub new {
     croak "max_upload_bytes must be a positive integer"
         if defined $args{max_upload_bytes}
         && (ref($args{max_upload_bytes}) || $args{max_upload_bytes} !~ /\A[1-9][0-9]*\z/);
+
+    $args{max_list_limit} = $DEFAULT_MAX_LIST_LIMIT unless defined $args{max_list_limit};
+    croak "max_list_limit must be a positive integer"
+        if ref($args{max_list_limit}) || $args{max_list_limit} !~ /\A[1-9][0-9]*\z/;
 
     $args{chunk_size} = 65536 unless defined $args{chunk_size};
     croak "chunk_size must be a positive integer"
@@ -434,7 +439,7 @@ sub handle_list_blobs {
     croak "list request method must be GET" unless $request->method eq 'GET';
 
     my $pubkey = _pubkey_from_list_path($request->path);
-    my %list_opts = _list_options_from_query($request->query);
+    my %list_opts = _list_options_from_query($request->query, $self->max_list_limit);
     my $blobs = $self->storage->list_blobs($pubkey, %list_opts);
     croak "storage list_blobs must return an array reference" unless ref($blobs) eq 'ARRAY';
 
@@ -520,7 +525,7 @@ sub _sha256_from_blob_path {
 }
 
 sub _list_options_from_query {
-    my ($query) = @_;
+    my ($query, $max_list_limit) = @_;
 
     # Query parameters are client input, so malformed values are a BUD-12 400,
     # not an internal error.
@@ -538,7 +543,10 @@ sub _list_options_from_query {
     if (exists $query->{limit}) {
         _bad_list_query('limit must be a scalar') if ref($query->{limit});
         _bad_list_query('limit must be a positive integer') unless $query->{limit} =~ /\A[1-9][0-9]*\z/;
+        _bad_list_query("limit must not exceed $max_list_limit") if $query->{limit} > $max_list_limit;
         $opts{limit} = $query->{limit};
+    } else {
+        $opts{limit} = $max_list_limit;
     }
 
     return %opts;
@@ -1048,6 +1056,12 @@ Optional positive integer bounding the size of an accepted upload. When set,
 C<PUT /upload> and C<PUT /media> bodies that exceed it are rejected with a
 C<413> and the partial upload is aborted. Defaults to unset (no limit).
 
+=item * C<max_list_limit>
+
+Positive integer maximum C<GET /list/E<lt>pubkeyE<gt>> page size. List requests
+without a C<limit> query parameter use this value as the default. Requests with
+a larger C<limit> are rejected with C<400>. Defaults to C<100>.
+
 =back
 
 Unknown arguments or invalid values croak.
@@ -1074,6 +1088,10 @@ Returns the optional mirror fetcher.
 
 Returns the configured maximum upload size, or C<undef> when uploads are
 not size-limited.
+
+=head2 max_list_limit
+
+Returns the configured maximum list page size.
 
 =head1 METHODS
 
@@ -1304,7 +1322,8 @@ C<Net::Blossom::Server::Response>. The request path must contain one lowercase
 
 The method reads optional C<cursor> and C<limit> query parameters. C<cursor>
 must be a lowercase 64-character SHA-256 hash. C<limit> must be a positive
-integer.
+integer no larger than C<max_list_limit>. Requests without C<limit> use
+C<max_list_limit> as the default page size.
 
 The method calls C<< $server->storage->list_blobs($pubkey, %opts) >> and
 returns status C<200> with a JSON array of blob descriptors. Storage must return

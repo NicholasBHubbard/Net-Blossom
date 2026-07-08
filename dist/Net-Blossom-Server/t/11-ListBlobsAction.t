@@ -108,7 +108,7 @@ subtest 'handle_list_blobs returns descriptor JSON array' => sub {
     is($response->status, 200, 'list status');
     is($response->header('content-type'), 'application/json', 'json content type');
     is_deeply($JSON->decode($response->body), [map { $_->to_hash } @descriptors], 'list body');
-    is_deeply($storage->last_list_blobs, [$PUBKEY, {}], 'pubkey passed to storage');
+    is_deeply($storage->last_list_blobs, [$PUBKEY, { limit => 100 }], 'pubkey and default limit passed to storage');
 };
 
 subtest 'handle_list_blobs passes cursor and limit query parameters' => sub {
@@ -126,6 +126,62 @@ subtest 'handle_list_blobs passes cursor and limit query parameters' => sub {
 
     is($response->status, 200, 'list status');
     is_deeply($storage->last_list_blobs, [$PUBKEY, { cursor => $CURSOR, limit => 50 }], 'query options passed to storage');
+};
+
+subtest 'handle_list_blobs applies configurable list limit bounds' => sub {
+    my $storage = Local::Storage->new(blobs => []);
+    my $server = Net::Blossom::Server->new(storage => $storage, max_list_limit => 25);
+
+    my $response = $server->handle_list_blobs(request(method => 'GET', path => "/list/$PUBKEY"));
+    is($response->status, 200, 'list status without query limit');
+    is_deeply($storage->last_list_blobs, [$PUBKEY, { limit => 25 }], 'configured default limit passed to storage');
+
+    $response = $server->handle_list_blobs(request(
+        method => 'GET',
+        path   => "/list/$PUBKEY",
+        query  => { limit => 10 },
+    ));
+    is($response->status, 200, 'list status with smaller query limit');
+    is_deeply($storage->last_list_blobs, [$PUBKEY, { limit => 10 }], 'smaller query limit passed to storage');
+
+    $response = $server->handle_list_blobs(request(
+        method => 'GET',
+        path   => "/list/$PUBKEY",
+        query  => { limit => 25 },
+    ));
+    is($response->status, 200, 'list status with exact maximum query limit');
+    is_deeply($storage->last_list_blobs, [$PUBKEY, { limit => 25 }], 'exact maximum query limit passed to storage');
+
+    $storage = Local::Storage->new(blobs => []);
+    $server = Net::Blossom::Server->new(storage => $storage, max_list_limit => 25);
+    my $error = dies {
+        $server->handle_list_blobs(request(
+            method => 'GET',
+            path   => "/list/$PUBKEY",
+            query  => { limit => 26 },
+        ));
+    };
+    isa_ok($error, 'Net::Blossom::Server::Error', 'over-limit query throws a typed error');
+    is($error->status, 400, 'over-limit query maps to a BUD-12 400');
+    is($error->reason, 'limit must not exceed 25', 'over-limit query reason');
+    is($storage->last_list_blobs, undef, 'over-limit query does not reach storage');
+};
+
+subtest 'constructor validates max_list_limit' => sub {
+    is(
+        Net::Blossom::Server->new(storage => Local::Storage->new, max_list_limit => 25)->max_list_limit,
+        25,
+        'custom max list limit accepted',
+    );
+    like(dies {
+        Net::Blossom::Server->new(storage => Local::Storage->new, max_list_limit => 0);
+    }, qr/max_list_limit must be a positive integer/, 'zero rejected');
+    like(dies {
+        Net::Blossom::Server->new(storage => Local::Storage->new, max_list_limit => 'big');
+    }, qr/max_list_limit must be a positive integer/, 'non-integer rejected');
+    like(dies {
+        Net::Blossom::Server->new(storage => Local::Storage->new, max_list_limit => [25]);
+    }, qr/max_list_limit must be a positive integer/, 'reference rejected');
 };
 
 subtest 'handle_list_blobs validates request inputs' => sub {

@@ -231,7 +231,7 @@ subtest 'handle_request dispatches GET /list/<pubkey>' => sub {
     isa_ok($response, 'Net::Blossom::Server::Response');
     is($response->status, 200, 'list status');
     is_deeply($JSON->decode($response->body), [$descriptor->to_hash], 'list response body');
-    is_deeply($storage->{last_list_blobs}, [$PUBKEY, {}], 'list passed to storage');
+    is_deeply($storage->{last_list_blobs}, [$PUBKEY, { limit => 100 }], 'list passed to storage');
 };
 
 subtest 'handle_request dispatches HEAD /upload preflight' => sub {
