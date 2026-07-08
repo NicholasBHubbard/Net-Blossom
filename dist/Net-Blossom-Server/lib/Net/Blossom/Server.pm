@@ -1323,7 +1323,8 @@ C<Net::Blossom::Server::Response>. The request path must contain one lowercase
 The method reads optional C<cursor> and C<limit> query parameters. C<cursor>
 must be a lowercase 64-character SHA-256 hash. C<limit> must be a positive
 integer no larger than C<max_list_limit>. Requests without C<limit> use
-C<max_list_limit> as the default page size.
+C<max_list_limit> as the default page size. Storage receives a bounded C<limit>
+for every list request.
 
 The method calls C<< $server->storage->list_blobs($pubkey, %opts) >> and
 returns status C<200> with a JSON array of blob descriptors. Storage must return

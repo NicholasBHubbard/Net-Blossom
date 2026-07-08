@@ -1,11 +1,14 @@
 use strictures 2;
 
-use FindBin;
-use lib "$FindBin::Bin/lib";
-
 use Test::More;
 
-use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
+use Net::Blossom::Server::Storage::Test qw(run_storage_contract_tests);
+
+sub dies(&) {
+    my ($code) = @_;
+    my $ok = eval { $code->(); 1 };
+    return $ok ? undef : $@;
+}
 
 {
     package Local::ContractStorage;
@@ -35,6 +38,12 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
             descriptor => $entry->{descriptor},
             body       => $entry->{body},
         );
+    }
+
+    sub head_blob {
+        my ($self, $sha256) = @_;
+        return unless exists $self->{blobs}{$sha256};
+        return $self->{blobs}{$sha256}{descriptor};
     }
 
     sub delete_blob {
@@ -77,6 +86,43 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
 
         splice @blobs, $opts{limit} if defined $opts{limit} && @blobs > $opts{limit};
         return \@blobs;
+    }
+}
+
+{
+    package Local::StreamingContractStorage;
+    use strictures 2;
+
+    our @ISA = qw(Local::ContractStorage);
+
+    use Net::Blossom::Server::BlobResult;
+
+    sub get_blob {
+        my ($self, $sha256) = @_;
+        my $entry = $self->{blobs}{$sha256};
+        return unless defined $entry;
+        return Net::Blossom::Server::BlobResult->new(
+            descriptor => $entry->{descriptor},
+            body       => Local::ReadStream->new($entry->{body}),
+        );
+    }
+}
+
+{
+    package Local::ReadStream;
+    use strictures 2;
+
+    sub new {
+        my ($class, $body) = @_;
+        return bless { body => $body, offset => 0 }, $class;
+    }
+
+    sub read {
+        my ($self, undef, $length) = @_;
+        return 0 if $self->{offset} >= length $self->{body};
+        $_[1] = substr($self->{body}, $self->{offset}, $length);
+        $self->{offset} += length $_[1];
+        return length $_[1];
     }
 }
 
@@ -134,9 +180,23 @@ use Net::Blossom::Server::Test::StorageContract qw(storage_contract_ok);
     }
 }
 
-storage_contract_ok(
+subtest 'run_storage_contract_tests validates arguments' => sub {
+    like(dies { run_storage_contract_tests() },
+        qr/name is required/, 'name required');
+    like(dies { run_storage_contract_tests(name => 'storage') },
+        qr/factory must be a code reference/, 'factory required');
+    like(dies { run_storage_contract_tests(name => 'storage', factory => sub { Local::ContractStorage->new }, bogus => 1) },
+        qr/unknown argument\(s\): bogus/, 'unknown argument rejected');
+};
+
+run_storage_contract_tests(
     name    => 'in-memory contract storage',
-    storage => sub { Local::ContractStorage->new },
+    factory => sub { Local::ContractStorage->new },
+);
+
+run_storage_contract_tests(
+    name    => 'streaming body contract storage',
+    factory => sub { Local::StreamingContractStorage->new },
 );
 
 done_testing;

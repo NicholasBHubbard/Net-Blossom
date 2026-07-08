@@ -70,6 +70,32 @@ calculate or trust blob hashes. For uploads, storage receives bytes through an
 upload writer and receives the computed C<sha256>, C<size>, C<type>,
 C<uploaded>, and optional C<pubkey> values at commit time.
 
+=head1 IMPLEMENTATION NOTES
+
+Backends normally store blob bytes, descriptor metadata, and owner metadata. The
+descriptor URL is deployment policy, so a storage constructor will usually take
+a public C<base_url> and use it when building descriptors.
+
+A minimal upload writer records bytes in C<write>, makes the blob and owner
+relationship visible in C<commit>, and discards unfinished bytes in C<abort>:
+
+    sub begin_upload { ...; return My::Upload->new(...) }
+    sub write        { ... }
+    sub commit       { ...; return { descriptor => $blob, created => $created } }
+    sub abort        { ... }
+
+Database backends can implement pagination by ordering owner rows with:
+
+    ORDER BY uploaded DESC, sha256 ASC
+
+When C<cursor> is present, first find that descriptor for the pubkey, then
+return rows after it in the same order.
+
+Filesystem backends should write uploads to a temporary path and move bytes into
+place only during C<commit>, reusing the existing SHA-256 path for duplicate
+bytes. They still need a metadata index for owners, descriptors, ordering, and
+cursor lookup; scanning blob files alone is not enough.
+
 =head1 STORAGE METHODS
 
 =head2 begin_upload
@@ -80,6 +106,8 @@ Starts an upload and returns an upload writer object. The context includes
 C<type> and may include C<expected_sha256>, C<allowed_sha256>,
 C<content_length>, and C<pubkey>. The upload writer must provide C<write>,
 C<commit>, and C<abort>.
+
+No blob or owner relationship may become visible until C<commit> succeeds.
 
 =head2 get_blob
 
@@ -114,9 +142,11 @@ false when the blob or owner relationship was not available.
     my $blobs = $storage->list_blobs($pubkey, %opts);
 
 Returns an array reference of C<Net::Blossom::BlobDescriptor> objects uploaded
-by C<$pubkey>, sorted by C<uploaded> descending. C<cursor> is the SHA-256 hash of
-the last blob from the previous page and must be excluded from the returned page.
-C<limit>, when present, caps the number of descriptors returned.
+by C<$pubkey>, sorted by C<uploaded> descending and C<sha256> ascending.
+C<cursor> is the SHA-256 hash of the last blob from the previous page and must
+be excluded from the returned page. The next page starts after that descriptor in
+the ordered list. An unknown C<cursor> returns an empty page. C<limit>, when
+present, caps the number of descriptors returned and must be honored.
 
 =head1 UPLOAD WRITER METHODS
 
@@ -142,12 +172,17 @@ the blob bytes were newly stored and C<0> when the blob already existed.
 For pre-release compatibility, raw C<Net::Blossom::BlobDescriptor> objects and
 descriptor hash references are accepted and treated as C<< created => 1 >>.
 
+C<commit> must be atomic from the caller's view. After a successful C<commit>,
+the blob and owner relationship must be visible. If C<commit> fails, neither may
+be visible.
+
 =head2 abort
 
     $upload->abort;
 
 Aborts an upload after validation or write failure. C<abort> should be safe to
-call more than once.
+call more than once. Aborted uploads must not become visible through C<get_blob>
+or C<list_blobs>.
 
 =head1 METHODS
 
@@ -176,5 +211,11 @@ methods. Returns true otherwise.
 
 Croaks unless C<$upload> is an object that provides the required upload writer
 methods. Returns true otherwise.
+
+=head1 BACKEND TESTS
+
+Backend distributions should use
+L<Net::Blossom::Server::Storage::Test/run_storage_contract_tests> to verify that
+their storage implementation satisfies this contract.
 
 =cut
