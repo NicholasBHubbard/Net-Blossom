@@ -454,9 +454,9 @@ Net::Blossom::Server::Backend::SQLite - SQLite storage backend for Blossom serve
 
 =head1 DESCRIPTION
 
-C<Net::Blossom::Server::Backend::SQLite> stores Blossom blob bytes and metadata
-in a SQLite database. It implements the L<Net::Blossom::Server::Storage>
-contract used by L<Net::Blossom::Server>.
+C<Net::Blossom::Server::Backend::SQLite> is a SQLite storage backend for
+L<Net::Blossom::Server>. It stores Blossom blob bytes and metadata in a SQLite
+database and implements the L<Net::Blossom::Server::Storage> contract.
 
 SQLite access is provided through L<DBI> and L<DBD::SQLite>.
 
