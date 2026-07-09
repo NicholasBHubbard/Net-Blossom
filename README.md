@@ -7,6 +7,7 @@ This repo contains multiple CPAN distributions:
 
 - `dist/Net-Blossom`: shared protocol objects and the client library.
 - `dist/Net-Blossom-Server`: server-side support and storage backend contracts.
+- `dist/Net-Blossom-Server-Backend-SQLite`: SQLite storage backend.
 
 ## Contributing
 

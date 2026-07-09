@@ -40,6 +40,7 @@ jobs:
             print "PERL5LIB=", join(":",
                 "$root/dist/Net-Blossom/lib",
                 "$root/dist/Net-Blossom-Server/lib",
+                "$root/dist/Net-Blossom-Server-Backend-SQLite/lib",
                 "$root/local/lib/perl5",
                 "$root/local/lib/perl5/$Config::Config{archname}",
                 "$root/local/lib/perl5/$Config::Config{version}",
@@ -56,13 +57,19 @@ jobs:
       - name: Install server dependencies
         run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server
 
+      - name: Install server distribution
+        run: cpanm -llocal --notest ./dist/Net-Blossom-Server
+
+      - name: Install SQLite backend dependencies
+        run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-SQLite
+
       - name: Run tests
-        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t
+        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t dist/Net-Blossom-Server-Backend-SQLite/t
 
       - name: Run author tests
         env:
           AUTHOR_TESTING: 1
-        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt
+        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt dist/Net-Blossom-Server-Backend-SQLite/xt
 
       - name: Install coverage dependencies
         if: matrix.perl-version == 'latest'
@@ -73,4 +80,4 @@ jobs:
         env:
           AUTHOR_TESTING: 1
           COVERAGE_TESTING: 1
-        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t
+        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t dist/Net-Blossom-Server-Backend-SQLite/xt/04-author-coverage.t
