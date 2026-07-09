@@ -1,7 +1,2 @@
-Revision history for Net-Blossom
-
-0.001000 2026-07-07
+0.001000 2026-07-09
     - Initial CPAN release.
-    - Add Blossom client support, protocol value objects, Blossom URI handling,
-      server-list handling, and BUD-11 authorization token creation.
-    - Delegate BUD-03 server-list helpers to Net::Nostr::Blossom.

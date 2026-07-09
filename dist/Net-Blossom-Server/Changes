@@ -1,14 +1,2 @@
-Revision history for Net-Blossom-Server
-
-{{$NEXT}}
-    - Change mirror fetchers to stream origin bytes into a server-provided sink
-      instead of returning a buffered body scalar.
-    - Add a configurable maximum/default limit for server list responses.
-    - Add a public storage backend conformance test helper.
-    - Document storage backend implementation notes for database and filesystem
-      backends.
-
-0.001000 2026-07-07
+0.001000 2026-07-09
     - Initial CPAN release.
-    - Add framework-neutral Blossom server support, PSGI integration,
-      authorization checks, request routing, and storage contracts.
