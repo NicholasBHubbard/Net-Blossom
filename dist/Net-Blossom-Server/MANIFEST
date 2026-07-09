@@ -39,3 +39,4 @@ xt/01-author-license-metadata.t
 xt/02-author-pod-coverage.t
 xt/03-author-readme-server-status.t
 xt/04-author-release-metadata.t
+xt/05-author-coverage.t

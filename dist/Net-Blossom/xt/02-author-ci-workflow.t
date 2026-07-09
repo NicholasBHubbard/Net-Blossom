@@ -32,6 +32,12 @@ like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/
     'CI runs regular tests');
 like($yaml, qr/AUTHOR_TESTING=1\s+prove\s+dist\/Net-Blossom\/xt\s+dist\/Net-Blossom-Server\/xt/,
     'CI runs author tests');
+like($yaml, qr/if:\s+matrix\.perl-version\s+==\s+'latest'/,
+    'CI gates coverage to latest Perl');
+like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*Devel::Cover\b/,
+    'CI installs Devel::Cover separately');
+like($yaml, qr/COVERAGE_TESTING=1\s+AUTHOR_TESTING=1\s+prove\s+dist\/Net-Blossom\/xt\/06-author-coverage\.t\s+dist\/Net-Blossom-Server\/xt\/05-author-coverage\.t/,
+    'CI runs opt-in coverage author tests');
 
 done_testing;
 

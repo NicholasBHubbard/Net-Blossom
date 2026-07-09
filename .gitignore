@@ -3,6 +3,7 @@
 /.cpanm/
 /.plx/
 /blossom/
+/cover_db/
 cpanfile
 *.tar.gz
 
@@ -10,10 +11,12 @@ cpanfile
 /dist/Net-Blossom/MYMETA.json
 /dist/Net-Blossom/MYMETA.yml
 /dist/Net-Blossom/blib/
+/dist/Net-Blossom/cover_db/
 /dist/Net-Blossom/pm_to_blib
 
 /dist/Net-Blossom-Server/Makefile
 /dist/Net-Blossom-Server/MYMETA.json
 /dist/Net-Blossom-Server/MYMETA.yml
 /dist/Net-Blossom-Server/blib/
+/dist/Net-Blossom-Server/cover_db/
 /dist/Net-Blossom-Server/pm_to_blib

@@ -35,7 +35,17 @@ jobs:
       - name: Configure local lib
         run: |
           echo "$GITHUB_WORKSPACE/local/bin" >> "$GITHUB_PATH"
-          echo "PERL5LIB=$GITHUB_WORKSPACE/dist/Net-Blossom/lib:$GITHUB_WORKSPACE/dist/Net-Blossom-Server/lib:$GITHUB_WORKSPACE/local/lib/perl5" >> "$GITHUB_ENV"
+          perl -MConfig -e '
+            my $root = $ENV{GITHUB_WORKSPACE};
+            print "PERL5LIB=", join(":",
+                "$root/dist/Net-Blossom/lib",
+                "$root/dist/Net-Blossom-Server/lib",
+                "$root/local/lib/perl5",
+                "$root/local/lib/perl5/$Config::Config{archname}",
+                "$root/local/lib/perl5/$Config::Config{version}",
+                "$root/local/lib/perl5/$Config::Config{version}/$Config::Config{archname}",
+            ), "\n";
+          ' >> "$GITHUB_ENV"
 
       - name: Install client dependencies
         run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom
@@ -53,3 +63,14 @@ jobs:
         env:
           AUTHOR_TESTING: 1
         run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt
+
+      - name: Install coverage dependencies
+        if: matrix.perl-version == 'latest'
+        run: cpanm -llocal --notest Devel::Cover
+
+      - name: Run coverage author tests
+        if: matrix.perl-version == 'latest'
+        env:
+          AUTHOR_TESTING: 1
+          COVERAGE_TESTING: 1
+        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t

@@ -40,3 +40,4 @@ xt/02-author-ci-workflow.t
 xt/03-author-no-core-prereqs.t
 xt/04-author-pod-coverage.t
 xt/05-author-release-metadata.t
+xt/06-author-coverage.t
