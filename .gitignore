@@ -4,6 +4,7 @@
 /.plx/
 /blossom/
 cpanfile
+*.tar.gz
 
 /dist/Net-Blossom/Makefile
 /dist/Net-Blossom/MYMETA.json
