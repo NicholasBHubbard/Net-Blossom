@@ -4,7 +4,7 @@ This repository is the Perl implementation of [the Blossom protocol](https://git
 
 The project goal is to conform to the Blossom standard, keep the implementation boring and maintainable, and back behavior with strong tests and clear documentation.
 
-This is a monorepo with multiple CPAN distributions under `./dist/`.
+This is a monorepo with multiple CPAN distributions under `dist/`.
 
 Each distribution keeps regular tests in `t/` and author-only tests in `xt/`.
 
