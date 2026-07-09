@@ -1053,8 +1053,9 @@ no default network fetcher is provided.
 =item * C<max_upload_bytes>
 
 Optional positive integer bounding the size of an accepted upload. When set,
-C<PUT /upload> and C<PUT /media> bodies that exceed it are rejected with a
-C<413> and the partial upload is aborted. Defaults to unset (no limit).
+C<PUT /upload>, C<PUT /media>, and mirrored origin bodies that exceed it are
+rejected with C<413> and the partial upload is aborted. Defaults to unset (no
+limit).
 
 =item * C<max_list_limit>
 

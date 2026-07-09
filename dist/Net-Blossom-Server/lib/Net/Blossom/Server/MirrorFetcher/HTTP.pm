@@ -262,7 +262,8 @@ Required arguments:
 =item * C<allowed_hosts>
 
 Array reference of host names that may be mirrored. Matching is exact and
-case-insensitive. Wildcards are not supported.
+case-insensitive. Wildcards are not supported. Only default ports for the URL
+scheme are allowed.
 
 =item * C<max_bytes>
 
