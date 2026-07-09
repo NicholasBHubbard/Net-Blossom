@@ -1,4 +1,5 @@
 Changes
+LICENSE
 lib/Net/Blossom.pm
 lib/Net/Blossom/_ConstructorArgs.pm
 lib/Net/Blossom/_URL.pm

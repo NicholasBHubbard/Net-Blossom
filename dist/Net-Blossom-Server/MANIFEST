@@ -1,4 +1,5 @@
 Changes
+LICENSE
 lib/Net/Blossom/Server.pm
 lib/Net/Blossom/Server/Authorization.pm
 lib/Net/Blossom/Server/AuthorizationResult.pm
