@@ -29,6 +29,7 @@ my $makefile = do {
 like($makefile, qr/^\s*VERSION_FROM\s*=>\s*'lib\/Net\/Blossom\/Server\/Backend\/Postgres\.pm',/m, 'Makefile.PL uses VERSION_FROM');
 like($makefile, qr/^\s*'Net::Blossom'\s*=>\s*'0\.001000',/m, 'Makefile.PL depends on released Net::Blossom version');
 like($makefile, qr/^\s*'Net::Blossom::Server'\s*=>\s*'0\.001000',/m, 'Makefile.PL depends on matching Net::Blossom::Server version');
+like($makefile, qr/^\s*'DBD::Pg'\s*=>\s*'2\.12\.0',/m, 'Makefile.PL requires pg_lo method support');
 
 my $changes_path = "$dist/Changes";
 ok(-f $changes_path, 'Changes exists');

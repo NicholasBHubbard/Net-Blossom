@@ -16,9 +16,22 @@ sub dies(&) {
     use strictures 2;
 
     sub do {}
-    sub selectrow_array {}
+    sub selectrow_array { return 'public' }
     sub selectrow_hashref {}
     sub selectall_arrayref {}
+    sub quote_identifier {
+        shift;
+        return join '.', map { qq{"$_"} } @_;
+    }
+}
+
+{
+    package Local::NoSchemaDBH;
+    use strictures 2;
+
+    our @ISA = ('Local::FakeDBH');
+
+    sub selectrow_array { return }
 }
 
 my $fake_pg = bless {
@@ -29,6 +42,14 @@ my $fake_sqlite = bless {
     Driver     => { Name => 'SQLite' },
     AutoCommit => 1,
 }, 'Local::FakeDBH';
+my $manual_transaction_pg = bless {
+    Driver     => { Name => 'Pg' },
+    AutoCommit => 0,
+}, 'Local::FakeDBH';
+my $no_schema_pg = bless {
+    Driver     => { Name => 'Pg' },
+    AutoCommit => 1,
+}, 'Local::NoSchemaDBH';
 
 like(dies { Net::Blossom::Server::Backend::Postgres->new },
     qr/dsn or dbh is required/, 'dsn or dbh required');
@@ -63,6 +84,18 @@ like(dies {
         base_url => 'https://cdn.example.test',
     );
 }, qr/dbh must be a Postgres DBI handle/, 'dbh must be a Postgres handle');
+like(dies {
+    Net::Blossom::Server::Backend::Postgres->new(
+        dbh      => $manual_transaction_pg,
+        base_url => 'https://cdn.example.test',
+    );
+}, qr/dbh must have AutoCommit enabled/, 'dbh must let the backend own transactions');
+like(dies {
+    Net::Blossom::Server::Backend::Postgres->new(
+        dbh      => $no_schema_pg,
+        base_url => 'https://cdn.example.test',
+    );
+}, qr/Postgres connection has no current schema/, 'dbh must have a current schema');
 like(dies {
     Net::Blossom::Server::Backend::Postgres->new(
         dbh      => $fake_pg,

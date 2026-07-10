@@ -195,5 +195,6 @@ sub _reset_schema {
     $dbh->do('DROP TABLE IF EXISTS blossom_owners');
     $dbh->do('DROP TABLE IF EXISTS blossom_blobs');
     $dbh->do('DROP FUNCTION IF EXISTS blossom_pause_blob_delete()');
+    $dbh->do('SELECT lo_unlink(oid) FROM pg_largeobject_metadata');
     return;
 }

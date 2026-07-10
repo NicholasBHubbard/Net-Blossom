@@ -4,6 +4,12 @@ use Test::More;
 
 use Net::Blossom::Server::Backend::Postgres;
 
+sub dies(&) {
+    my ($code) = @_;
+    my $ok = eval { $code->(); 1 };
+    return $ok ? undef : $@;
+}
+
 my $dbh = _test_dbh();
 _reset_schema($dbh);
 
@@ -32,6 +38,35 @@ my ($index_exists) = $dbh->selectrow_array(q{
 });
 ok($index_exists, 'schema creates owner ordering index');
 
+my $columns = $dbh->selectall_arrayref(q{
+    SELECT column_name, udt_name
+      FROM information_schema.columns
+     WHERE table_schema = current_schema()
+       AND table_name = 'blossom_blobs'
+     ORDER BY ordinal_position
+});
+is_deeply($columns, [
+    [sha256 => 'text'],
+    [body_oid => 'oid'],
+    [size => 'int8'],
+    [type => 'text'],
+    [uploaded => 'int8'],
+], 'blob table stores a large-object OID instead of bytea');
+
+_reset_schema($dbh);
+$dbh->do(q{
+    CREATE TABLE blossom_blobs (
+        sha256   text PRIMARY KEY NOT NULL,
+        body     bytea NOT NULL,
+        size     bigint NOT NULL,
+        type     text NOT NULL,
+        uploaded bigint NOT NULL
+    )
+});
+like(dies { $storage->deploy_schema },
+    qr/incompatible blossom_blobs schema.*recreate/i,
+    'deploy rejects the obsolete bytea schema clearly');
+
 done_testing;
 
 sub _test_dbh {
@@ -58,5 +93,6 @@ sub _reset_schema {
     my ($dbh) = @_;
     $dbh->do('DROP TABLE IF EXISTS blossom_owners');
     $dbh->do('DROP TABLE IF EXISTS blossom_blobs');
+    $dbh->do('SELECT lo_unlink(oid) FROM pg_largeobject_metadata');
     return;
 }

@@ -1,2 +1,4 @@
 0.001000 2026-07-10
-    - Initial CPAN release.
+    - Initial CPAN release with streamed PostgreSQL large-object storage.
+    - Bind operations to the schema active at construction and require
+      AutoCommit on supplied DBI handles.
