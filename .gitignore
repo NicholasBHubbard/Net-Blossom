@@ -6,6 +6,7 @@
 /cover_db/
 cpanfile
 *.tar.gz
+Makefile.old
 
 /dist/Net-Blossom/Makefile
 /dist/Net-Blossom/MYMETA.json
@@ -27,3 +28,10 @@ cpanfile
 /dist/Net-Blossom-Server-Backend-SQLite/blib/
 /dist/Net-Blossom-Server-Backend-SQLite/cover_db/
 /dist/Net-Blossom-Server-Backend-SQLite/pm_to_blib
+
+/dist/Net-Blossom-Server-Backend-Postgres/Makefile
+/dist/Net-Blossom-Server-Backend-Postgres/MYMETA.json
+/dist/Net-Blossom-Server-Backend-Postgres/MYMETA.yml
+/dist/Net-Blossom-Server-Backend-Postgres/blib/
+/dist/Net-Blossom-Server-Backend-Postgres/cover_db/
+/dist/Net-Blossom-Server-Backend-Postgres/pm_to_blib

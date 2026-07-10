@@ -20,6 +20,7 @@ for my $dist (
     '`dist/Net-Blossom`: shared protocol objects and the client library.',
     '`dist/Net-Blossom-Server`: server-side support and storage backend contracts.',
     '`dist/Net-Blossom-Server-Backend-SQLite`: SQLite storage backend.',
+    '`dist/Net-Blossom-Server-Backend-Postgres`: Postgres storage backend.',
 ) {
     like($content, qr/\Q$dist\E/, "README mentions $dist");
 }
