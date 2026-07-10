@@ -1,6 +1,8 @@
 Changes
 LICENSE
 lib/Net/Blossom.pm
+lib/Net/Blossom/_Bech32.pm
+lib/Net/Blossom/_CashuPaymentRequest.pm
 lib/Net/Blossom/_ConstructorArgs.pm
 lib/Net/Blossom/_URL.pm
 lib/Net/Blossom/AuthToken.pm
@@ -22,6 +24,7 @@ t/05-URI.t
 t/06-ServerList.t
 t/07-HTTPValues.t
 t/08-URL.t
+t/09-CashuPaymentRequest.t
 t/bud/01.t
 t/bud/02.t
 t/bud/03.t

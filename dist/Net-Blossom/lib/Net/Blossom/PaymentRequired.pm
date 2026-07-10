@@ -65,8 +65,10 @@ from a Blossom server. It is a subclass of C<Net::Blossom::Error>.
 
 When this object is produced by C<Net::Blossom::Client>, payment challenges are
 parsed from non-reserved C<X-*> response headers. Known C<cashu> and
-C<lightning> challenges are validated before being exposed. Unknown future
-payment methods are preserved when they have a scalar non-empty payload.
+C<lightning> challenges are validated before being exposed. Cashu validation
+supports the NUT-24 HTTP payment profile in both NUT-18 C<creqA> and NUT-26
+C<creqB> encodings. Unknown future payment methods are preserved when they
+have a scalar non-empty payload.
 
 =head1 CONSTRUCTOR
 

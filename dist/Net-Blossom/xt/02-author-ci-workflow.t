@@ -26,6 +26,10 @@ like($yaml, qr/actions\/checkout\@v7/,
     'CI uses current checkout action');
 like($yaml, qr/shogo82148\/actions-setup-perl\@v1/,
     'CI sets up Perl with actions-setup-perl');
+like($yaml, qr/repository:\s*NicholasBHubbard\/p5-CBOR-Free\s*\n\s*ref:\s*1d37d1ead46b630e97f09747cf8a0eca1a46e485\s*\n\s*path:\s*\.deps\/p5-CBOR-Free\s*\n\s*submodules:\s*true/,
+    'CI checks out the reviewed CBOR::Free commit with submodules');
+like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\s+\.\/\.deps\/p5-CBOR-Free(?:\s|$)/,
+    'CI installs the reviewed CBOR::Free commit');
 like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom(?:\s|$)/,
     'CI installs Net-Blossom dependencies into local');
 like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom-Server(?:\s|$)/,
