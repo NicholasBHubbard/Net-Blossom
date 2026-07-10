@@ -3,6 +3,7 @@ package Net::Blossom::Server::Backend::SQLite;
 use strictures 2;
 
 use Carp qw(croak);
+use Class::Tiny qw(dbh base_url);
 use DBI ();
 use File::Temp qw(tempfile);
 use Net::Blossom::BlobDescriptor;
@@ -12,7 +13,7 @@ use Scalar::Util qw(blessed);
 
 our $VERSION = '0.001000';
 
-sub new {
+sub BUILDARGS {
     my $class = shift;
     my %args = _constructor_args(@_);
     my %known = map { $_ => 1 } qw(database dbh base_url);
@@ -30,20 +31,10 @@ sub new {
     my $dbh = defined $args{dbh} ? _validate_dbh($args{dbh}) : _connect($args{database});
     $dbh->do('PRAGMA foreign_keys = ON');
 
-    return bless {
+    return {
         dbh      => $dbh,
         base_url => $base_url,
-    }, $class;
-}
-
-sub dbh {
-    my ($self) = @_;
-    return $self->{dbh};
-}
-
-sub base_url {
-    my ($self) = @_;
-    return $self->{base_url};
+    };
 }
 
 sub deploy_schema {
@@ -353,16 +344,16 @@ sub _constructor_args {
     use strictures 2;
 
     use Carp qw(croak);
+    use Class::Tiny qw(storage fh path), {
+        committed => 0,
+        aborted   => 0,
+    };
 
-    sub new {
-        my ($class, %args) = @_;
-        return bless {
-            storage   => $args{storage},
-            fh        => $args{fh},
-            path      => $args{path},
-            committed => 0,
-            aborted   => 0,
-        }, $class;
+    sub BUILD {
+        my ($self) = @_;
+        $self->committed;
+        $self->aborted;
+        return;
     }
 
     sub write {
@@ -423,7 +414,7 @@ sub _constructor_args {
         return 1;
     }
 
-    sub DESTROY {
+    sub DEMOLISH {
         my ($self) = @_;
         return if $self->{committed} || $self->{aborted};
         eval { $self->abort };
@@ -542,5 +533,11 @@ owners are deleted.
 Returns descriptors owned by C<$pubkey>, sorted by C<uploaded> descending and
 C<sha256> ascending. C<cursor> and C<limit> follow the
 L<Net::Blossom::Server::Storage> contract.
+
+=head1 INTERNAL METHODS
+
+=head2 BUILDARGS
+
+Normalizes constructor arguments for Class::Tiny.
 
 =cut

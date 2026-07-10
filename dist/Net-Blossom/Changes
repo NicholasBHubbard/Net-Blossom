@@ -1,6 +1,7 @@
 0.001001 Not Released
     - Validate NUT-18 and NUT-26 Cashu payment requests, including duplicate
       CBOR map keys.
+    - Use Class::Tiny for all object construction.
 
 0.001000 2026-07-09
     - Initial CPAN release.

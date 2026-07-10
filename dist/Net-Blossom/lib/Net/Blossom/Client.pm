@@ -13,7 +13,9 @@ use Net::Blossom::_CashuPaymentRequest ();
 use Net::Blossom::_URL ();
 
 use Carp qw(croak);
-use Class::Tiny qw(server ua auth);
+use Class::Tiny qw(server auth), {
+    ua => sub { HTTP::Tiny->new },
+};
 use Digest::SHA qw(sha256_hex);
 use HTTP::Tiny;
 use JSON ();
@@ -26,20 +28,25 @@ my $JSON = JSON->new->utf8;
 my $CANONICAL_JSON = JSON->new->utf8->canonical;
 my %RESERVED_PAYMENT_METHOD = map { $_ => 1 } qw(reason sha-256 content-type content-length);
 
-sub new {
+sub BUILDARGS {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
     my %known = map { $_ => 1 } qw(server ua auth);
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
-    croak "server is required" unless defined $args{server} && length $args{server};
-    croak "server must be an http(s) base URL" if ref($args{server});
-    croak "server must be an http(s) base URL" unless _valid_server_url($args{server});
+    return \%args;
+}
 
-    $args{server} =~ s{/+\z}{};
-    $args{ua} = HTTP::Tiny->new unless defined $args{ua};
+sub BUILD {
+    my ($self) = @_;
+    croak "server is required" unless defined $self->server && length $self->server;
+    croak "server must be an http(s) base URL" if ref($self->server);
+    croak "server must be an http(s) base URL" unless _valid_server_url($self->server);
 
-    return bless \%args, $class;
+    (my $server = $self->server) =~ s{/+\z}{};
+    $self->server($server);
+    $self->ua(HTTP::Tiny->new) unless defined $self->ua;
+    return;
 }
 
 sub get_blob {
@@ -876,5 +883,15 @@ Malformed JSON success bodies also croak.
 L<Net::Blossom::AuthToken>, L<Net::Blossom::BlobDescriptor>,
 L<Net::Blossom::Error>, L<Net::Blossom::PaymentRequired>,
 L<Net::Blossom::Response>, L<Net::Blossom::ServerList>
+
+=head1 INTERNAL METHODS
+
+=head2 BUILDARGS
+
+Normalizes constructor arguments for Class::Tiny.
+
+=head2 BUILD
+
+Validates the constructed object for Class::Tiny.
 
 =cut

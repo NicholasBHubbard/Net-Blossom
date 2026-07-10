@@ -3,6 +3,7 @@ package Net::Blossom::Server::Backend::Postgres;
 use strictures 2;
 
 use Carp qw(croak);
+use Class::Tiny qw(dbh base_url _schema);
 use DBI ();
 use File::Temp qw(tempfile);
 use Net::Blossom::BlobDescriptor;
@@ -12,7 +13,7 @@ use Scalar::Util qw(blessed);
 
 our $VERSION = '0.001000';
 
-sub new {
+sub BUILDARGS {
     my $class = shift;
     my %args = _constructor_args(@_);
     my %known = map { $_ => 1 } qw(dsn username password dbh base_url connect_attrs);
@@ -34,21 +35,11 @@ sub new {
     croak "Postgres connection has no current schema"
         unless defined $schema && length $schema;
 
-    return bless {
+    return {
         dbh      => $dbh,
         base_url => $base_url,
-        schema   => $schema,
-    }, $class;
-}
-
-sub dbh {
-    my ($self) = @_;
-    return $self->{dbh};
-}
-
-sub base_url {
-    my ($self) = @_;
-    return $self->{base_url};
+        _schema  => $schema,
+    };
 }
 
 sub deploy_schema {
@@ -353,7 +344,7 @@ sub _descriptor {
 
 sub _assert_schema_compatible {
     my ($self) = @_;
-    my $schema = $self->{schema};
+    my $schema = $self->_schema;
     my $columns = $self->dbh->selectall_arrayref(q{
         SELECT column_name, udt_name
           FROM information_schema.columns
@@ -414,7 +405,7 @@ sub _with_transaction {
 
 sub _table {
     my ($self, $name) = @_;
-    return $self->dbh->quote_identifier($self->{schema}, $name);
+    return $self->dbh->quote_identifier($self->_schema, $name);
 }
 
 sub _connect {
@@ -488,16 +479,16 @@ sub _constructor_args {
     use strictures 2;
 
     use Carp qw(croak);
+    use Class::Tiny qw(storage fh path), {
+        committed => 0,
+        aborted   => 0,
+    };
 
-    sub new {
-        my ($class, %args) = @_;
-        return bless {
-            storage   => $args{storage},
-            fh        => $args{fh},
-            path      => $args{path},
-            committed => 0,
-            aborted   => 0,
-        }, $class;
+    sub BUILD {
+        my ($self) = @_;
+        $self->committed;
+        $self->aborted;
+        return;
     }
 
     sub write {
@@ -551,7 +542,7 @@ sub _constructor_args {
         return 1;
     }
 
-    sub DESTROY {
+    sub DEMOLISH {
         my ($self) = @_;
         return if $self->{committed} || $self->{aborted};
         eval { $self->abort };
@@ -565,17 +556,18 @@ sub _constructor_args {
     use strictures 2;
 
     use Carp qw(croak);
+    use Class::Tiny qw(dbh fd), {
+        closed => 0,
+        eof    => 0,
+    };
 
     my $READ_SIZE = 65536;
 
-    sub new {
-        my ($class, %args) = @_;
-        return bless {
-            dbh    => $args{dbh},
-            fd     => $args{fd},
-            closed => 0,
-            eof    => 0,
-        }, $class;
+    sub BUILD {
+        my ($self) = @_;
+        $self->closed;
+        $self->eof;
+        return;
     }
 
     sub read {
@@ -661,7 +653,7 @@ sub _constructor_args {
         return 1;
     }
 
-    sub DESTROY {
+    sub DEMOLISH {
         my ($self) = @_;
         eval { $self->_finish(0) } unless $self->{closed};
         return;
@@ -811,5 +803,11 @@ L<Net::Blossom::Server::Storage> contract.
 
 L<PostgreSQL large objects|https://www.postgresql.org/docs/current/largeobjects.html>,
 L<DBD::Pg/Large Objects>
+
+=head1 INTERNAL METHODS
+
+=head2 BUILDARGS
+
+Normalizes constructor arguments for Class::Tiny.
 
 =cut

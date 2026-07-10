@@ -14,7 +14,11 @@ use Net::Blossom::Server::Storage;
 use Net::Blossom::Server::UploadResult;
 
 use Carp qw(croak);
-use Class::Tiny qw(storage chunk_size clock mirror_fetcher max_upload_bytes max_list_limit);
+use Class::Tiny qw(storage mirror_fetcher max_upload_bytes), {
+    chunk_size     => 65536,
+    clock          => sub { sub { time } },
+    max_list_limit => 100,
+};
 use Digest::SHA ();
 use JSON ();
 use Scalar::Util qw(blessed);
@@ -63,36 +67,41 @@ sub _blob_response_headers {
     return \%headers;
 }
 
-sub new {
+sub BUILDARGS {
     my $class = shift;
     my %args = Net::Blossom::_ConstructorArgs::normalize(@_);
     my %known = map { $_ => 1 } qw(storage chunk_size clock mirror_fetcher max_upload_bytes max_list_limit);
     my @unknown = grep { !exists $known{$_} } keys %args;
     croak "unknown argument(s): " . join(', ', sort @unknown) if @unknown;
 
-    Net::Blossom::Server::Storage->assert_implements($args{storage});
+    return \%args;
+}
+
+sub BUILD {
+    my ($self) = @_;
+    Net::Blossom::Server::Storage->assert_implements($self->storage);
 
     croak "max_upload_bytes must be a positive integer"
-        if defined $args{max_upload_bytes}
-        && (ref($args{max_upload_bytes}) || $args{max_upload_bytes} !~ /\A[1-9][0-9]*\z/);
+        if defined $self->max_upload_bytes
+        && (ref($self->max_upload_bytes) || $self->max_upload_bytes !~ /\A[1-9][0-9]*\z/);
 
-    $args{max_list_limit} = $DEFAULT_MAX_LIST_LIMIT unless defined $args{max_list_limit};
+    $self->max_list_limit($DEFAULT_MAX_LIST_LIMIT) unless defined $self->max_list_limit;
     croak "max_list_limit must be a positive integer"
-        if ref($args{max_list_limit}) || $args{max_list_limit} !~ /\A[1-9][0-9]*\z/;
+        if ref($self->max_list_limit) || $self->max_list_limit !~ /\A[1-9][0-9]*\z/;
 
-    $args{chunk_size} = 65536 unless defined $args{chunk_size};
+    $self->chunk_size(65536) unless defined $self->chunk_size;
     croak "chunk_size must be a positive integer"
-        unless !ref($args{chunk_size}) && $args{chunk_size} =~ /\A[1-9][0-9]*\z/;
+        unless !ref($self->chunk_size) && $self->chunk_size =~ /\A[1-9][0-9]*\z/;
 
-    $args{clock} = sub { time } unless defined $args{clock};
-    croak "clock must be a code reference" unless ref($args{clock}) eq 'CODE';
+    $self->clock(sub { time }) unless defined $self->clock;
+    croak "clock must be a code reference" unless ref($self->clock) eq 'CODE';
 
     croak "mirror_fetcher must be a code reference or object with fetch_blob"
-        if defined $args{mirror_fetcher}
-        && !(ref($args{mirror_fetcher}) eq 'CODE'
-            || (blessed($args{mirror_fetcher}) && $args{mirror_fetcher}->can('fetch_blob')));
+        if defined $self->mirror_fetcher
+        && !(ref($self->mirror_fetcher) eq 'CODE'
+            || (blessed($self->mirror_fetcher) && $self->mirror_fetcher->can('fetch_blob')));
 
-    return bless \%args, $class;
+    return;
 }
 
 sub receive_blob {
@@ -878,20 +887,29 @@ sub _validate_pubkey {
     use strictures 2;
 
     use Carp qw(croak);
+    use subs 'started';
+    use Class::Tiny qw(server opts upload type content_length), {
+        sha       => sub { Digest::SHA->new(256) },
+        size      => 0,
+        started   => 0,
+        committed => 0,
+    };
 
-    sub new {
+    sub BUILDARGS {
         my ($class, %args) = @_;
         croak "server is required" unless defined $args{server};
         croak "opts must be a hash reference" unless ref($args{opts}) eq 'HASH';
 
-        return bless {
-            server    => $args{server},
-            opts      => $args{opts},
-            sha       => Digest::SHA->new(256),
-            size      => 0,
-            started   => 0,
-            committed => 0,
-        }, $class;
+        return \%args;
+    }
+
+    sub BUILD {
+        my ($self) = @_;
+        $self->sha;
+        $self->size;
+        $self->started;
+        $self->committed;
+        return;
     }
 
     sub started {
@@ -1403,5 +1421,15 @@ C<handle_mirror> for deferred hash authorization.
 
 The server core is under active development. It implements the protocol handlers
 documented above and remains framework-neutral.
+
+=head1 INTERNAL METHODS
+
+=head2 BUILDARGS
+
+Normalizes constructor arguments for Class::Tiny.
+
+=head2 BUILD
+
+Validates the constructed object for Class::Tiny.
 
 =cut

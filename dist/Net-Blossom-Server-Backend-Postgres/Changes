@@ -2,3 +2,4 @@
     - Initial CPAN release with streamed PostgreSQL large-object storage.
     - Bind operations to the schema active at construction and require
       AutoCommit on supplied DBI handles.
+    - Use Class::Tiny for all object construction and cleanup.
