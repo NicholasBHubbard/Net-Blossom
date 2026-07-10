@@ -260,11 +260,12 @@ sub _descriptor {
 sub _with_transaction {
     my ($self, $code) = @_;
     my $dbh = $self->dbh;
-    my $manage = $dbh->{AutoCommit};
     my $wantarray = wantarray;
     my (@result, $result);
 
-    $dbh->begin_work if $manage;
+    croak "dbh must have AutoCommit enabled"
+        unless $dbh->{AutoCommit};
+    $dbh->begin_work;
     my $ok = eval {
         if ($wantarray) {
             @result = $code->();
@@ -277,11 +278,11 @@ sub _with_transaction {
     my $error = $@;
 
     if (!$ok) {
-        eval { $dbh->rollback if $manage };
+        eval { $dbh->rollback };
         die $error;
     }
 
-    $dbh->commit if $manage;
+    $dbh->commit;
     return $wantarray ? @result : $result;
 }
 
@@ -310,6 +311,8 @@ sub _validate_dbh {
     my $driver = eval { $dbh->{Driver}{Name} };
     croak "dbh must be a SQLite DBI handle"
         unless defined $driver && $driver eq 'SQLite';
+    croak "dbh must have AutoCommit enabled"
+        unless $dbh->{AutoCommit};
     $dbh->{RaiseError} = 1;
     $dbh->{PrintError} = 0;
     return $dbh;
@@ -474,7 +477,7 @@ created. It may include a path prefix, but not userinfo, query, or fragment
 parts. Trailing slashes are removed.
 
 Instead of C<database>, callers may pass an existing DBI handle as C<dbh>. The
-handle must be a SQLite handle.
+handle must be a SQLite handle with C<AutoCommit> enabled.
 
 =head1 METHODS
 

@@ -1,5 +1,6 @@
 0.001001 Not Released
     - Use Class::Tiny for all object construction.
+    - Ensure coverage tests load the working-tree modules.
 
 0.001000 2026-07-09
     - Initial CPAN release.

@@ -2,6 +2,7 @@
     - Validate NUT-18 and NUT-26 Cashu payment requests, including duplicate
       CBOR map keys.
     - Use Class::Tiny for all object construction.
+    - Ensure coverage tests load the working-tree modules.
 
 0.001000 2026-07-09
     - Initial CPAN release.

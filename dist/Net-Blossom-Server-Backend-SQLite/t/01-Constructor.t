@@ -142,4 +142,18 @@ my $dbh_storage = Net::Blossom::Server::Backend::SQLite->new(
 );
 is($dbh_storage->dbh, $dbh, 'constructor accepts an existing DBI handle');
 
+my $manual_dbh = DBI->connect(
+    "dbi:SQLite:dbname=$dir/manual-handle.sqlite",
+    '',
+    '',
+    { RaiseError => 1, PrintError => 0, AutoCommit => 0 },
+);
+like(dies {
+    Net::Blossom::Server::Backend::SQLite->new(
+        dbh      => $manual_dbh,
+        base_url => 'https://cdn.example.test/manual-dbh',
+    );
+}, qr/dbh must have AutoCommit enabled/, 'dbh must have AutoCommit enabled');
+$manual_dbh->disconnect;
+
 done_testing;

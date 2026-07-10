@@ -91,6 +91,19 @@ subtest 'commit failure rolls back and aborts upload' => sub {
         'database failure is preserved');
 };
 
+subtest 'upload rejects a handle changed to manual transaction mode' => sub {
+    my $storage = storage();
+    my $server = Net::Blossom::Server->new(storage => $storage);
+    $storage->dbh->{AutoCommit} = 0;
+
+    like(dies { $server->receive_blob('body', pubkey => $PUBKEY) },
+        qr/dbh must have AutoCommit enabled/,
+        'manual transaction mode is rejected before upload');
+
+    $storage->dbh->rollback;
+    $storage->dbh->{AutoCommit} = 1;
+};
+
 subtest 'post-commit temp cleanup failure does not fail committed upload' => sub {
     my $storage = storage();
     my $body = "cleanup failure after commit\n";
