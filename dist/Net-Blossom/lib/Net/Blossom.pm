@@ -6,7 +6,7 @@ use Net::Blossom::Client;
 use Net::Blossom::ServerList;
 use Net::Blossom::URI;
 
-our $VERSION = '0.001000';
+our $VERSION = '0.001001';
 
 sub client {
     my $class = shift;

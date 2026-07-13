@@ -11,7 +11,7 @@ use Net::Blossom::_URL;
 use Net::Blossom::Server::BlobResult;
 use Scalar::Util qw(blessed);
 
-our $VERSION = '0.001000';
+our $VERSION = '0.001001';
 
 sub BUILDARGS {
     my $class = shift;
@@ -708,6 +708,13 @@ transaction commits or rolls back. Direct SQL writes to the backend tables do
 not participate in this locking protocol. Operations for different hashes may
 run concurrently.
 
+=head1 UPGRADING FROM 0.001000
+
+Version C<0.001000> stored blob bodies in C<bytea>. This version uses PostgreSQL
+large objects and does not migrate the old schema. Back up any data you need,
+then recreate the C<blossom_blobs> and C<blossom_owners> tables before calling
+C<deploy_schema>.
+
 =head1 CONSTRUCTOR
 
 =head2 new
@@ -757,8 +764,8 @@ Returns the normalized descriptor URL prefix.
 
 Creates the required Postgres tables and indexes if they do not already exist.
 They are created in the schema captured by C<new>. This method is safe to call
-more than once. It does not migrate the obsolete pre-release C<bytea> schema;
-recreate that schema if it is detected.
+more than once. It does not migrate the C<0.001000> C<bytea> schema; see
+L</UPGRADING FROM 0.001000>.
 
 =head2 begin_upload
 

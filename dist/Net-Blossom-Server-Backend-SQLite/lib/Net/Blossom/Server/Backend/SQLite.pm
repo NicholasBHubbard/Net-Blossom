@@ -11,7 +11,7 @@ use Net::Blossom::_URL;
 use Net::Blossom::Server::BlobResult;
 use Scalar::Util qw(blessed);
 
-our $VERSION = '0.001000';
+our $VERSION = '0.001001';
 
 sub BUILDARGS {
     my $class = shift;

@@ -1,4 +1,4 @@
-0.001001 Not Released
+0.001001 2026-07-13
     - Use Class::Tiny for all object construction.
     - Ensure coverage tests load the working-tree modules.
     - Link the top-level server POD to Net::Blossom, backend discovery, and

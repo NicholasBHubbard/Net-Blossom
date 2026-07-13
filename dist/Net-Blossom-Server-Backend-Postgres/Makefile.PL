@@ -18,8 +18,8 @@ WriteMakefile(
         'Class::Tiny'          => '1.001',
         'DBD::Pg'              => '2.12.0',
         'DBI'                  => '0',
-        'Net::Blossom'         => '0.001000',
-        'Net::Blossom::Server' => '0.001000',
+        'Net::Blossom'         => '0.001001',
+        'Net::Blossom::Server' => '0.001001',
         'strictures'           => '2',
     },
     test             => {

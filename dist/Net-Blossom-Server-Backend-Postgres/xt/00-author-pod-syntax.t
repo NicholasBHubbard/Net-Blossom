@@ -38,6 +38,12 @@ like($pod, qr{https://www\.postgresql\.org/docs/current/largeobjects\.html},
     'POD links to PostgreSQL large-object documentation');
 like($pod, qr{L<DBD::Pg/Large Objects>},
     'POD links to DBD::Pg large-object documentation');
+like($pod, qr/Version C<0\.001000> stored blob bodies in C<bytea>/,
+    'POD identifies the released bytea schema');
+like($pod, qr/does not migrate.*recreate/s,
+    'POD explains that the bytea schema must be recreated');
+unlike($pod, qr/pre-release C<bytea>/,
+    'POD does not call the released bytea schema pre-release');
 
 done_testing;
 
