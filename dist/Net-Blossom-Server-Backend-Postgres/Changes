@@ -1,3 +1,10 @@
+0.001002 2026-07-13
+    - Separate metadata and large-object storage behind public component APIs.
+    - Migrate the 0.001001 large-object schema automatically without copying
+      blob bodies.
+    - Reject metadata changes, blob preparation, and blob deletion outside the
+      coordinating transaction.
+
 0.001001 2026-07-13
     - Store blob bodies as streamed PostgreSQL large objects. The bytea
       schema from 0.001000 must be recreated before upgrading.

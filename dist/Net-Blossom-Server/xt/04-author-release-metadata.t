@@ -7,7 +7,8 @@ plan skip_all => 'AUTHOR_TESTING is not set'
     unless $ENV{AUTHOR_TESTING};
 
 my $dist = "$FindBin::Bin/..";
-my $version = '0.001001';
+my $version = '0.001002';
+my $net_blossom_version = '0.001001';
 
 my $module = do {
     open my $fh, '<', "$dist/lib/Net/Blossom/Server.pm"
@@ -27,7 +28,7 @@ my $makefile = do {
 };
 
 like($makefile, qr/^\s*VERSION_FROM\s*=>\s*'lib\/Net\/Blossom\/Server\.pm',/m, 'Makefile.PL uses VERSION_FROM');
-like($makefile, qr/^\s*'Net::Blossom'\s*=>\s*'\Q$version\E',/m, 'Makefile.PL depends on matching Net::Blossom version');
+like($makefile, qr/^\s*'Net::Blossom'\s*=>\s*'\Q$net_blossom_version\E',/m, 'Makefile.PL depends on the released Net::Blossom version');
 
 my $changes_path = "$dist/Changes";
 ok(-f $changes_path, 'Changes exists');

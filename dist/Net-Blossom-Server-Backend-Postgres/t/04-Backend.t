@@ -40,7 +40,7 @@ subtest 'blob descriptors use base URL and Postgres metadata' => sub {
     is($head->type, 'application/octet-stream', 'head descriptor type');
 
     my ($body_oid) = $DBH->selectrow_array(
-        'SELECT body_oid FROM blossom_blobs WHERE sha256 = ?',
+        'SELECT body_oid FROM blossom_blob_data WHERE storage_key = ?',
         undef,
         $sha256,
     );
@@ -71,7 +71,7 @@ subtest 'duplicate owner uploads stay unique and update list metadata' => sub {
     Net::Blossom::Server->new(storage => $storage, clock => sub { 1725107000 })
         ->receive_blob($body, type => 'text/plain', pubkey => $PUBKEY);
     my ($first_oid) = $DBH->selectrow_array(
-        'SELECT body_oid FROM blossom_blobs WHERE sha256 = ?',
+        'SELECT body_oid FROM blossom_blob_data WHERE storage_key = ?',
         undef,
         $sha256,
     );
@@ -98,7 +98,7 @@ subtest 'anonymous blobs can be deleted without owner scope' => sub {
         ->receive_blob($body, type => 'text/plain');
 
     my ($body_oid) = $DBH->selectrow_array(
-        'SELECT body_oid FROM blossom_blobs WHERE sha256 = ?',
+        'SELECT body_oid FROM blossom_blob_data WHERE storage_key = ?',
         undef,
         $sha256,
     );
@@ -118,7 +118,7 @@ subtest 'final owner deletion unlinks the large object' => sub {
     Net::Blossom::Server->new(storage => $storage)
         ->receive_blob($body, pubkey => $PUBKEY);
     my ($body_oid) = $DBH->selectrow_array(
-        'SELECT body_oid FROM blossom_blobs WHERE sha256 = ?',
+        'SELECT body_oid FROM blossom_blob_data WHERE storage_key = ?',
         undef,
         $sha256,
     );
@@ -126,6 +126,69 @@ subtest 'final owner deletion unlinks the large object' => sub {
     ok($storage->delete_blob($sha256, pubkey => $PUBKEY), 'final owner relationship deleted');
     my $remaining = grep { $_ == $body_oid } @{_large_object_oids($DBH)};
     ok(!$remaining, 'final owner deletion unlinks the large object');
+};
+
+subtest 'direct blob preparation requires a metadata transaction' => sub {
+    my $storage = storage();
+    my $upload = $storage->blob_store->begin_upload;
+    my $before = _large_object_oids($DBH);
+    $upload->write('uncoordinated body');
+
+    like(
+        dies { $upload->prepare(sha256 => sha256_hex('uncoordinated body')) },
+        qr/blob preparation requires an active transaction/,
+        'prepare outside the coordinator transaction is rejected',
+    );
+    is(
+        $DBH->selectrow_array(q{SELECT COUNT(*) FROM blossom_blob_data}),
+        0,
+        'rejected preparation leaves no blob-data row',
+    );
+    is_deeply(_large_object_oids($DBH), $before,
+        'rejected preparation leaves no large object');
+    ok($upload->abort, 'rejected preparation can be aborted');
+};
+
+subtest 'direct blob deletion requires a metadata transaction' => sub {
+    my $storage = storage();
+    my $body = 'coordinated body';
+    my $sha256 = sha256_hex($body);
+    Net::Blossom::Server->new(storage => $storage)->receive_blob($body);
+    my ($body_oid) = $DBH->selectrow_array(
+        q{SELECT body_oid FROM blossom_blob_data WHERE storage_key = ?},
+        undef,
+        $sha256,
+    );
+
+    like(
+        dies { $storage->blob_store->delete_blob($sha256) },
+        qr/blob deletion requires an active transaction/,
+        'delete outside the coordinator transaction is rejected',
+    );
+    isa_ok($storage->get_blob($sha256), 'Net::Blossom::Server::BlobResult',
+        'rejected deletion preserves metadata and bytes');
+    my $remaining = grep { $_ == $body_oid } @{_large_object_oids($DBH)};
+    ok($remaining, 'rejected deletion preserves the large object');
+};
+
+subtest 'direct metadata mutation requires a transaction' => sub {
+    my $storage = storage();
+    my $body = 'protected metadata';
+    my $sha256 = sha256_hex($body);
+    Net::Blossom::Server->new(storage => $storage)->receive_blob($body);
+
+    like(
+        dies { $storage->metadata_store->delete_blob($sha256) },
+        qr/metadata change requires an active transaction/,
+        'metadata deletion outside with_transaction is rejected',
+    );
+    like(
+        dies { $storage->metadata_store->lock_blob($sha256) },
+        qr/metadata change requires an active transaction/,
+        'advisory lock outside with_transaction is rejected',
+    );
+    isa_ok($storage->get_blob($sha256), 'Net::Blossom::Server::BlobResult',
+        'rejected metadata deletion preserves the blob');
 };
 
 subtest 'commit failure rolls back imported large object' => sub {
@@ -293,6 +356,7 @@ sub _reset_schema {
     $dbh->do('SET search_path TO public');
     $dbh->do('DROP TABLE IF EXISTS blossom_owners');
     $dbh->do('DROP TABLE IF EXISTS blossom_blobs');
+    $dbh->do('DROP TABLE IF EXISTS blossom_blob_data');
     $dbh->do('DROP FUNCTION IF EXISTS blossom_reject_owner()');
     $dbh->do('SELECT lo_unlink(oid) FROM pg_largeobject_metadata');
     return;

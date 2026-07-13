@@ -60,7 +60,7 @@ sub dies(&) {
 
 sub stream {
     my ($dbh) = @_;
-    return Net::Blossom::Server::Backend::Postgres::_Stream->new(
+    return Net::Blossom::Server::Backend::Postgres::BlobStore::_Stream->new(
         dbh => $dbh,
         fd  => 7,
     );

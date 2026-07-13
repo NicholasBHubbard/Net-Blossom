@@ -62,6 +62,31 @@ subtest 'duplicate owner uploads stay unique and update list metadata' => sub {
     is($listed->[0]->sha256, $sha256, 'listed duplicate hash');
     is($listed->[0]->type, 'application/octet-stream', 'owner list metadata was updated');
     is($listed->[0]->uploaded, 1725107100, 'owner list uploaded time was updated');
+    is(
+        $storage->dbh->selectrow_array(
+            q{SELECT COUNT(*) FROM blossom_blob_data WHERE storage_key = ?},
+            undef,
+            $sha256,
+        ),
+        1,
+        'duplicate upload keeps one physical blob row',
+    );
+};
+
+subtest 'empty and binary bodies remain distinguishable from missing blobs' => sub {
+    my $storage = storage();
+    my $server = Net::Blossom::Server->new(storage => $storage);
+    my $binary = "binary\0body";
+
+    $server->receive_blob($binary);
+    $server->receive_blob('');
+
+    is($storage->get_blob(sha256_hex($binary))->body, $binary,
+        'binary body round trips unchanged');
+    is($storage->get_blob(sha256_hex(''))->body, '',
+        'empty body is returned as an empty scalar');
+    is($storage->get_blob('f' x 64), undef,
+        'missing blob remains undef');
 };
 
 subtest 'anonymous blobs can be deleted without owner scope' => sub {
@@ -76,6 +101,65 @@ subtest 'anonymous blobs can be deleted without owner scope' => sub {
     ok(!$storage->delete_blob($sha256, pubkey => $PUBKEY), 'owner-scoped delete does not remove anonymous blob');
     ok($storage->delete_blob($sha256), 'unscoped delete removes anonymous blob');
     is($storage->get_blob($sha256), undef, 'anonymous blob removed');
+};
+
+subtest 'direct blob preparation requires a metadata transaction' => sub {
+    my $storage = storage();
+    my $upload = $storage->blob_store->begin_upload;
+    $upload->write('uncoordinated body');
+
+    like(
+        dies { $upload->prepare(sha256 => sha256_hex('uncoordinated body')) },
+        qr/blob preparation requires an active transaction/,
+        'prepare outside the coordinator transaction is rejected',
+    );
+    is(
+        $storage->dbh->selectrow_array(q{SELECT COUNT(*) FROM blossom_blob_data}),
+        0,
+        'rejected preparation leaves no blob-data row',
+    );
+    ok($upload->abort, 'rejected preparation can be aborted');
+};
+
+subtest 'direct blob deletion requires a metadata transaction' => sub {
+    my $storage = storage();
+    my $body = 'coordinated body';
+    my $sha256 = sha256_hex($body);
+    Net::Blossom::Server->new(storage => $storage)->receive_blob($body);
+
+    like(
+        dies { $storage->blob_store->delete_blob($sha256) },
+        qr/blob deletion requires an active transaction/,
+        'delete outside the coordinator transaction is rejected',
+    );
+    my $result = $storage->get_blob($sha256);
+    isa_ok($result, 'Net::Blossom::Server::BlobResult',
+        'rejected deletion preserves metadata');
+    is(defined $result ? $result->body : undef, $body,
+        'rejected deletion preserves bytes');
+};
+
+subtest 'direct metadata mutation requires a transaction' => sub {
+    my $storage = storage();
+    my $body = 'protected metadata';
+    my $sha256 = sha256_hex($body);
+    Net::Blossom::Server->new(storage => $storage)->receive_blob($body);
+
+    like(
+        dies { $storage->metadata_store->delete_blob($sha256) },
+        qr/metadata change requires an active transaction/,
+        'metadata deletion outside with_transaction is rejected',
+    );
+    like(
+        dies { $storage->metadata_store->lock_blob($sha256) },
+        qr/metadata change requires an active transaction/,
+        'blob lock outside with_transaction is rejected',
+    );
+    my $result = $storage->get_blob($sha256);
+    isa_ok($result, 'Net::Blossom::Server::BlobResult',
+        'rejected metadata deletion preserves the blob');
+    is(defined $result ? $result->body : undef, $body,
+        'rejected metadata deletion preserves bytes');
 };
 
 subtest 'commit failure rolls back and aborts upload' => sub {

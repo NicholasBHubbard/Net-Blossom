@@ -1,3 +1,7 @@
+0.001002 2026-07-13
+    - Add public metadata-store and blob-store component contracts for storage
+      backends that keep metadata and blob bytes separately.
+
 0.001001 2026-07-13
     - Use Class::Tiny for all object construction.
     - Ensure coverage tests load the working-tree modules.

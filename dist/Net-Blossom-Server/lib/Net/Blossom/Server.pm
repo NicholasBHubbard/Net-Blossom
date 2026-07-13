@@ -24,7 +24,7 @@ use JSON ();
 use Scalar::Util qw(blessed);
 use URI ();
 
-our $VERSION = '0.001001';
+our $VERSION = '0.001002';
 
 my $HEX64 = qr/\A[0-9a-f]{64}\z/;
 my $JSON = JSON->new->utf8;

@@ -3,6 +3,8 @@ use strictures 2;
 use Test::More;
 
 use Net::Blossom::Server::Backend::Postgres;
+use Net::Blossom::Server::BlobStore;
+use Net::Blossom::Server::MetadataStore;
 use Net::Blossom::Server::Storage;
 
 sub dies(&) {
@@ -173,6 +175,14 @@ isa_ok($storage, 'Net::Blossom::Server::Backend::Postgres');
 ok(Net::Blossom::Server::Storage->assert_implements($storage), 'storage contract methods exist');
 is($storage->dbh, $fake_pg, 'constructor accepts an existing DBI handle');
 is($storage->base_url, 'https://cdn.example.test/blobs', 'base_url is normalized');
+isa_ok($storage->metadata_store, 'Net::Blossom::Server::Backend::Postgres::MetadataStore');
+isa_ok($storage->blob_store, 'Net::Blossom::Server::Backend::Postgres::BlobStore');
+is($storage->metadata_store->dbh, $storage->dbh, 'metadata store shares backend DB handle');
+is($storage->blob_store->dbh, $storage->dbh, 'blob store shares backend DB handle');
+ok(Net::Blossom::Server::MetadataStore->assert_implements($storage->metadata_store),
+    'metadata component implements its contract');
+ok(Net::Blossom::Server::BlobStore->assert_implements($storage->blob_store),
+    'blob component implements its contract');
 
 my $hashref_storage = Net::Blossom::Server::Backend::Postgres->new({
     dbh      => $fake_pg,
