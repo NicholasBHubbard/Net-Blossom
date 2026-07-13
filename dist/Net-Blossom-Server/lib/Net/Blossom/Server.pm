@@ -1029,7 +1029,11 @@ Net::Blossom::Server - Server-side support for the Blossom protocol
 C<Net::Blossom::Server> is the framework-neutral server core for the Blossom
 protocol. Gateway adapters such as PSGI or PAGI should translate native requests
 into C<Net::Blossom::Server::Request> objects and translate
-C<Net::Blossom::Server::Response> objects back to their gateway format.
+C<Net::Blossom::Server::Response> objects back to their gateway format. It uses
+shared protocol types from L<Net::Blossom>, which also provides the client.
+Storage implementations are published under the
+L<Net::Blossom::Server::Backend namespace|https://metacpan.org/search?q=module%3ANet%3A%3ABlossom%3A%3AServer%3A%3ABackend+NOT+distribution%3ANet-Blossom-Server>
+and implement L<Net::Blossom::Server::Storage>.
 
 Server support lives in a separate CPAN distribution so client users do not need
 server, storage, daemon, or web framework dependencies.

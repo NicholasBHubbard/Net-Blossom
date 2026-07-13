@@ -15,7 +15,7 @@ WriteMakefile(
         'strictures' => '2',
     },
     PREREQ_PM        => {
-        'CBOR::Free'        => '0',
+        'CBOR::Free'        => '0.33',
         'Class::Tiny'       => '1.001',
         'JSON'              => '0',
         'Net::Nostr::Core'  => '0',

@@ -42,14 +42,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Checkout reviewed CBOR::Free
-        uses: actions/checkout@v7
-        with:
-          repository: NicholasBHubbard/p5-CBOR-Free
-          ref: 1d37d1ead46b630e97f09747cf8a0eca1a46e485
-          path: .deps/p5-CBOR-Free
-          submodules: true
-
       - name: Set up Perl
         uses: shogo82148/actions-setup-perl@v1
         with:
@@ -77,9 +69,6 @@ jobs:
 
       - name: Install PostgreSQL client headers
         run: sudo apt-get update && sudo apt-get install -y libpq-dev
-
-      - name: Install reviewed CBOR::Free
-        run: cpanm -llocal --notest ./.deps/p5-CBOR-Free
 
       - name: Install client dependencies
         run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom

@@ -27,6 +27,7 @@ my $makefile = do {
 };
 
 like($makefile, qr/^\s*VERSION_FROM\s*=>\s*'lib\/Net\/Blossom\.pm',/m, 'Makefile.PL uses VERSION_FROM');
+like($makefile, qr/^\s*'CBOR::Free'\s*=>\s*'0\.33',/m, 'Makefile.PL requires duplicate-key rejection');
 
 my $changes_path = "$dist/Changes";
 ok(-f $changes_path, 'Changes exists');
