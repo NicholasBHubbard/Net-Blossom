@@ -1,0 +1,44 @@
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+spec:
+  cephVersion:
+    image: quay.io/ceph/ceph:v20.2.2
+    allowUnsupported: false
+  dataDirHostPath: /var/lib/rook
+  mon:
+    count: 3
+    allowMultiplePerNode: false
+  mgr:
+    count: 1
+    allowMultiplePerNode: false
+  dashboard:
+    enabled: false
+  crashCollector:
+    disable: true
+  logCollector:
+    enabled: false
+  monitoring:
+    enabled: false
+  cleanupPolicy:
+    confirmation: ""
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    nodes:
+      - name: blossom-ceph-worker
+        devices:
+          - name: /dev/loop100
+      - name: blossom-ceph-worker2
+        devices:
+          - name: /dev/loop101
+      - name: blossom-ceph-worker3
+        devices:
+          - name: /dev/loop102
+  disruptionManagement:
+    managePodBudgets: false
+  cephConfig:
+    global:
+      osd_memory_target: "536870912"

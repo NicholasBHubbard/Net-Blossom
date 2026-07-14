@@ -11,6 +11,7 @@ ok(-d "$root/dist/Net-Blossom", 'Net-Blossom distribution lives under dist');
 ok(-d "$root/dist/Net-Blossom-Server", 'Net-Blossom-Server distribution lives under dist');
 ok(-d "$root/dist/Net-Blossom-Server-Backend-SQLite", 'Net-Blossom-Server-Backend-SQLite distribution lives under dist');
 ok(-d "$root/dist/Net-Blossom-Server-Backend-Postgres", 'Net-Blossom-Server-Backend-Postgres distribution lives under dist');
+ok(-d "$root/dist/Net-Blossom-Server-Backend-S3", 'Net-Blossom-Server-Backend-S3 distribution lives under dist');
 
 my $workflow = "$root/.github/workflows/ci.yml";
 ok(-f $workflow, 'GitHub Actions CI workflow exists');
@@ -19,6 +20,24 @@ done_testing and exit unless -f $workflow;
 open my $fh, '<', $workflow
     or die "Unable to read $workflow: $!";
 my $yaml = do { local $/; <$fh> };
+
+my $kind_config = "$root/.github/rook/kind.yaml";
+ok(-f $kind_config, 'Ceph CI KinD configuration exists');
+my $kind = '';
+if (-f $kind_config) {
+    open my $kind_fh, '<', $kind_config
+        or die "Unable to read $kind_config: $!";
+    $kind = do { local $/; <$kind_fh> };
+}
+
+my $object_config = "$root/.github/rook/object.yaml";
+ok(-f $object_config, 'Ceph object-store configuration exists');
+my $object = '';
+if (-f $object_config) {
+    open my $object_fh, '<', $object_config
+        or die "Unable to read $object_config: $!";
+    $object = do { local $/; <$object_fh> };
+}
 
 like($yaml, qr/perl-version:\s*\[\s*["']?5\.16["']?\s*,\s*["']?latest["']?\s*\]/,
     'CI tests Perl 5.16 and latest');
@@ -42,20 +61,65 @@ like($yaml, qr/postgres:16/,
     'CI provisions Postgres for backend tests');
 like($yaml, qr/NET_BLOSSOM_POSTGRES_DSN/,
     'CI configures Postgres backend test DSN');
+like($yaml, qr/dxflrs\/garage:v2\.3\.0/,
+    'CI provisions Garage for S3 compatibility tests');
+is(() = $yaml =~ /--name\s+blossom-garage-[123]\b/g, 3,
+    'CI provisions three named Garage nodes');
+unlike($yaml, qr/garage[^\n]*--single-node/,
+    'CI does not run Garage in single-node mode');
+like($yaml, qr/NET_BLOSSOM_S3_ENDPOINT/,
+    'CI configures live S3 compatibility tests');
+like($yaml, qr/NET_BLOSSOM_S3_PEER_ENDPOINT:\s*"http:\/\/127\.0\.0\.1:3902"/,
+    'CI gives the second backend node a separate S3 gateway');
+like($yaml, qr/--publish\s+3902:3900/,
+    'CI exposes a second Garage S3 gateway');
+like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom-Server-Backend-S3(?:\s|$)/,
+    'CI installs S3 backend dependencies into local');
 like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/Net-Blossom-Server\/t/,
     'CI runs regular tests');
 like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/Net-Blossom-Server\/t\s+dist\/Net-Blossom-Server-Backend-SQLite\/t/,
     'CI runs SQLite backend regular tests');
 like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/Net-Blossom-Server\/t\s+dist\/Net-Blossom-Server-Backend-SQLite\/t\s+dist\/Net-Blossom-Server-Backend-Postgres\/t/,
     'CI runs Postgres backend regular tests');
+like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/t/,
+    'CI runs S3 backend regular tests');
 like($yaml, qr/AUTHOR_TESTING=1\s+prove\s+dist\/Net-Blossom\/xt\s+dist\/Net-Blossom-Server\/xt\s+dist\/Net-Blossom-Server-Backend-SQLite\/xt\s+dist\/Net-Blossom-Server-Backend-Postgres\/xt/,
     'CI runs author tests');
+like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/xt/,
+    'CI runs S3 backend author tests');
 like($yaml, qr/if:\s+matrix\.perl-version\s+==\s+'latest'/,
     'CI gates coverage to latest Perl');
 like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*Devel::Cover\b/,
     'CI installs Devel::Cover separately');
 like($yaml, qr/COVERAGE_TESTING=1\s+AUTHOR_TESTING=1\s+prove\s+dist\/Net-Blossom\/xt\/06-author-coverage\.t\s+dist\/Net-Blossom-Server\/xt\/05-author-coverage\.t\s+dist\/Net-Blossom-Server-Backend-SQLite\/xt\/04-author-coverage\.t\s+dist\/Net-Blossom-Server-Backend-Postgres\/xt\/04-author-coverage\.t/,
     'CI runs opt-in coverage author tests');
+like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/xt\/04-author-coverage\.t/,
+    'CI runs S3 backend coverage author test');
+like($yaml, qr/^  ceph:\s*$/m,
+    'CI has a dedicated mandatory Ceph job');
+like($yaml, qr/^  pull_request:\s*\n\njobs:/m,
+    'CI runs the mandatory jobs on every pull request');
+unlike($yaml, qr/^  ceph:.*?^\s{4}(?:if|continue-on-error):/ms,
+    'Ceph job is not conditional or allowed to fail');
+like($yaml, qr/rook\/rook\/v1\.20\.2/,
+    'CI pins Rook release manifests');
+like($yaml, qr/kindest\/node:v1\.36\.1/,
+    'CI pins the Ceph job Kubernetes node image');
+like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/t\/21-LiveMultiNode\.t/,
+    'CI runs the live cross-node S3 backend test');
+like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[0\]\}"\s+3900:8080/,
+    'Ceph test forwards the first RGW pod');
+like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[1\]\}"\s+3901:8080/,
+    'Ceph test forwards a different RGW pod');
+
+is(() = $kind =~ /^\s*- role: worker\s*$/mg, 3,
+    'Ceph KinD cluster has three worker nodes');
+like($object, qr/metadataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,
+    'Ceph object metadata is replicated across three nodes');
+like($object, qr/dataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,
+    'Ceph object data is replicated across three nodes');
+like($object, qr/gateway:.*?instances:\s*3\b/s,
+    'Ceph runs three object gateways');
 
 done_testing;
 

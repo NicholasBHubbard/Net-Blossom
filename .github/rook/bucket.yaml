@@ -1,0 +1,18 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: blossom-ceph-bucket
+provisioner: rook-ceph.ceph.rook.io/bucket
+reclaimPolicy: Delete
+parameters:
+  objectStoreName: blossom
+  objectStoreNamespace: rook-ceph
+---
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: blossom-ceph-bucket
+  namespace: default
+spec:
+  bucketName: blossom-test
+  storageClassName: blossom-ceph-bucket

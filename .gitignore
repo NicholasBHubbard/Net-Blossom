@@ -35,3 +35,11 @@ Makefile.old
 /dist/Net-Blossom-Server-Backend-Postgres/blib/
 /dist/Net-Blossom-Server-Backend-Postgres/cover_db/
 /dist/Net-Blossom-Server-Backend-Postgres/pm_to_blib
+
+/dist/Net-Blossom-Server-Backend-S3/Makefile
+/dist/Net-Blossom-Server-Backend-S3/MYMETA.json
+/dist/Net-Blossom-Server-Backend-S3/MYMETA.yml
+/dist/Net-Blossom-Server-Backend-S3/blib/
+/dist/Net-Blossom-Server-Backend-S3/cover_db/
+/dist/Net-Blossom-Server-Backend-S3/pm_to_blib
+/dist/Net-Blossom-Server-Backend-S3/Net-Blossom-Server-Backend-S3-*/

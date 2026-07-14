@@ -37,10 +37,81 @@ jobs:
       NET_BLOSSOM_POSTGRES_DSN: "dbi:Pg:dbname=blossom_test;host=127.0.0.1;port=5432"
       NET_BLOSSOM_POSTGRES_USER: blossom
       NET_BLOSSOM_POSTGRES_PASSWORD: blossom
+      NET_BLOSSOM_S3_ENDPOINT: "http://127.0.0.1:3900"
+      NET_BLOSSOM_S3_PEER_ENDPOINT: "http://127.0.0.1:3902"
+      NET_BLOSSOM_S3_BUCKET: blossom-test
+      NET_BLOSSOM_S3_REGION: garage
+      NET_BLOSSOM_S3_ACCESS_KEY_ID: GK0123456789ABCDEF
+      NET_BLOSSOM_S3_SECRET_ACCESS_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Start Garage cluster
+        run: |
+          docker network create blossom-garage
+          for node in 1 2 3; do
+            sed "s/__NODE__/blossom-garage-$node/g" \
+              "$GITHUB_WORKSPACE/.github/garage.toml" \
+              > "$RUNNER_TEMP/garage-$node.toml"
+          done
+          docker run --detach --name blossom-garage-1 \
+            --publish 3900:3900 \
+            --network blossom-garage \
+            --volume "$RUNNER_TEMP/garage-1.toml:/etc/garage.toml:ro" \
+            dxflrs/garage:v2.3.0 \
+            /garage server
+          docker run --detach --name blossom-garage-2 \
+            --publish 3902:3900 \
+            --network blossom-garage \
+            --volume "$RUNNER_TEMP/garage-2.toml:/etc/garage.toml:ro" \
+            dxflrs/garage:v2.3.0 \
+            /garage server
+          docker run --detach --name blossom-garage-3 \
+            --network blossom-garage \
+            --volume "$RUNNER_TEMP/garage-3.toml:/etc/garage.toml:ro" \
+            dxflrs/garage:v2.3.0 \
+            /garage server
+
+          for node in 1 2 3; do
+            ready=false
+            for attempt in {1..30}; do
+              if docker exec "blossom-garage-$node" /garage node id -q \
+                  > "$RUNNER_TEMP/garage-$node.id"; then
+                ready=true
+                break
+              fi
+              echo "Waiting for Garage node $node ($attempt/30)"
+              sleep 1
+            done
+            if [ "$ready" != true ]; then
+              docker logs "blossom-garage-$node"
+              exit 1
+            fi
+          done
+
+          docker exec blossom-garage-1 /garage node connect \
+            "$(cat "$RUNNER_TEMP/garage-2.id")"
+          docker exec blossom-garage-1 /garage node connect \
+            "$(cat "$RUNNER_TEMP/garage-3.id")"
+          for node in 1 2 3; do
+            node_id="$(cut -d@ -f1 < "$RUNNER_TEMP/garage-$node.id")"
+            docker exec blossom-garage-1 /garage layout assign \
+              --zone "zone-$node" --capacity 1G "$node_id"
+          done
+          docker exec blossom-garage-1 /garage layout apply --version 1
+          docker exec blossom-garage-1 /garage key import --yes \
+            -n blossom-ci \
+            "$NET_BLOSSOM_S3_ACCESS_KEY_ID" \
+            "$NET_BLOSSOM_S3_SECRET_ACCESS_KEY"
+          docker exec blossom-garage-1 /garage bucket create \
+            "$NET_BLOSSOM_S3_BUCKET"
+          docker exec blossom-garage-1 /garage bucket allow \
+            --read --write --owner \
+            --key "$NET_BLOSSOM_S3_ACCESS_KEY_ID" \
+            "$NET_BLOSSOM_S3_BUCKET"
+          docker exec blossom-garage-1 /garage status
 
       - name: Set up Perl
         uses: shogo82148/actions-setup-perl@v1
@@ -60,6 +131,7 @@ jobs:
                 "$root/dist/Net-Blossom-Server/lib",
                 "$root/dist/Net-Blossom-Server-Backend-SQLite/lib",
                 "$root/dist/Net-Blossom-Server-Backend-Postgres/lib",
+                "$root/dist/Net-Blossom-Server-Backend-S3/lib",
                 "$root/local/lib/perl5",
                 "$root/local/lib/perl5/$Config::Config{archname}",
                 "$root/local/lib/perl5/$Config::Config{version}",
@@ -88,13 +160,16 @@ jobs:
       - name: Install Postgres backend dependencies
         run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-Postgres
 
+      - name: Install S3 backend dependencies
+        run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-S3
+
       - name: Run tests
-        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t dist/Net-Blossom-Server-Backend-SQLite/t dist/Net-Blossom-Server-Backend-Postgres/t
+        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t dist/Net-Blossom-Server-Backend-SQLite/t dist/Net-Blossom-Server-Backend-Postgres/t dist/Net-Blossom-Server-Backend-S3/t
 
       - name: Run author tests
         env:
           AUTHOR_TESTING: 1
-        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt dist/Net-Blossom-Server-Backend-SQLite/xt dist/Net-Blossom-Server-Backend-Postgres/xt
+        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt dist/Net-Blossom-Server-Backend-SQLite/xt dist/Net-Blossom-Server-Backend-Postgres/xt dist/Net-Blossom-Server-Backend-S3/xt
 
       - name: Install coverage dependencies
         if: matrix.perl-version == 'latest'
@@ -105,4 +180,210 @@ jobs:
         env:
           AUTHOR_TESTING: 1
           COVERAGE_TESTING: 1
-        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t dist/Net-Blossom-Server-Backend-SQLite/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-Postgres/xt/04-author-coverage.t
+        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t dist/Net-Blossom-Server-Backend-SQLite/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-Postgres/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-S3/xt/04-author-coverage.t
+
+  ceph:
+    name: Ceph three-node S3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: blossom
+          POSTGRES_PASSWORD: blossom
+          POSTGRES_DB: blossom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U blossom -d blossom_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PERL_CPANM_HOME: ${{ github.workspace }}/.cpanm
+      NET_BLOSSOM_POSTGRES_DSN: "dbi:Pg:dbname=blossom_test;host=127.0.0.1;port=5432"
+      NET_BLOSSOM_POSTGRES_USER: blossom
+      NET_BLOSSOM_POSTGRES_PASSWORD: blossom
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
+        with:
+          tool-cache: true
+          large-packages: false
+          android: false
+          dotnet: false
+          haskell: false
+
+      - name: Create Ceph loop devices
+        run: |
+          sudo mkdir -p /var/tmp/net-blossom-ceph
+          for number in 100 101 102; do
+            sudo mknod -m 0660 "/dev/loop$number" b 7 "$number" || true
+            sudo truncate -s 8G "/var/tmp/net-blossom-ceph/osd-$number.img"
+            sudo losetup "/dev/loop$number" "/var/tmp/net-blossom-ceph/osd-$number.img"
+          done
+          sudo udevadm settle
+          lsblk /dev/loop100 /dev/loop101 /dev/loop102
+
+      - name: Create three-worker KinD cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc
+        with:
+          version: v0.32.0
+          node_image: kindest/node:v1.36.1
+          config: .github/rook/kind.yaml
+          cluster_name: blossom-ceph
+          wait: 300s
+          ignore_failed_clean: true
+
+      - name: Verify KinD topology
+        run: |
+          kubectl get nodes -o wide
+          test "$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | wc -l)" -eq 3
+
+      - name: Install Rook and Ceph
+        run: |
+          rook_url=https://raw.githubusercontent.com/rook/rook/v1.20.2/deploy/examples
+          kubectl create \
+            -f "$rook_url/crds.yaml" \
+            -f "$rook_url/common.yaml" \
+            -f "$rook_url/csi-operator.yaml"
+          curl --fail --silent --show-error --location \
+            "$rook_url/operator.yaml" --output "$RUNNER_TEMP/rook-operator.yaml"
+          sed -i 's/ROOK_CEPH_ALLOW_LOOP_DEVICES: "false"/ROOK_CEPH_ALLOW_LOOP_DEVICES: "true"/' \
+            "$RUNNER_TEMP/rook-operator.yaml"
+          grep 'ROOK_CEPH_ALLOW_LOOP_DEVICES: "true"' "$RUNNER_TEMP/rook-operator.yaml"
+          kubectl create -f "$RUNNER_TEMP/rook-operator.yaml"
+          kubectl -n rook-ceph rollout status deployment/rook-ceph-operator --timeout=5m
+          kubectl create -f .github/rook/cluster.yaml
+          kubectl create -f "$rook_url/toolbox.yaml"
+
+      - name: Verify replicated Ceph cluster
+        run: |
+          kubectl -n rook-ceph rollout status deployment/rook-ceph-tools --timeout=15m
+          toolbox="$(kubectl -n rook-ceph get pod -l app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}')"
+          ready=false
+          for attempt in {1..180}; do
+            if kubectl -n rook-ceph exec "$toolbox" -- ceph status --format json 2>/dev/null \
+                | jq -e '.health.status == "HEALTH_OK" and .osdmap.num_osds == 3 and .osdmap.num_up_osds == 3 and .osdmap.num_in_osds == 3' >/dev/null; then
+              ready=true
+              break
+            fi
+            echo "Waiting for three healthy Ceph OSDs ($attempt/180)"
+            sleep 5
+          done
+          kubectl -n rook-ceph exec "$toolbox" -- ceph status
+          kubectl -n rook-ceph exec "$toolbox" -- ceph osd tree
+          test "$ready" = true
+          test "$(kubectl -n rook-ceph get pod -l app=rook-ceph-osd -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u | wc -l)" -eq 3
+
+      - name: Create replicated Ceph object store
+        run: |
+          kubectl create -f .github/rook/object.yaml
+          ready=false
+          for attempt in {1..180}; do
+            if [ "$(kubectl -n rook-ceph get cephobjectstore blossom -o jsonpath='{.status.phase}' 2>/dev/null)" = Ready ]; then
+              ready=true
+              break
+            fi
+            echo "Waiting for Ceph RGW ($attempt/180)"
+            sleep 5
+          done
+          kubectl -n rook-ceph get cephobjectstore blossom -o yaml
+          test "$ready" = true
+          kubectl -n rook-ceph wait --for=condition=Ready pod \
+            -l app=rook-ceph-rgw --timeout=10m
+          test "$(kubectl -n rook-ceph get pod -l app=rook-ceph-rgw -o name | wc -l)" -eq 3
+          test "$(kubectl -n rook-ceph get pod -l app=rook-ceph-rgw -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u | wc -l)" -eq 3
+          kubectl create -f .github/rook/bucket.yaml
+          ready=false
+          for attempt in {1..120}; do
+            if kubectl -n default get secret blossom-ceph-bucket >/dev/null 2>&1 \
+                && kubectl -n default get configmap blossom-ceph-bucket >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            echo "Waiting for Ceph bucket credentials ($attempt/120)"
+            sleep 2
+          done
+          test "$ready" = true
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: latest
+
+      - name: Configure local lib
+        run: |
+          echo "$GITHUB_WORKSPACE/local/bin" >> "$GITHUB_PATH"
+          perl -MConfig -e '
+            my $root = $ENV{GITHUB_WORKSPACE};
+            print "PERL5LIB=", join(":",
+                "$root/dist/Net-Blossom/lib",
+                "$root/dist/Net-Blossom-Server/lib",
+                "$root/dist/Net-Blossom-Server-Backend-SQLite/lib",
+                "$root/dist/Net-Blossom-Server-Backend-Postgres/lib",
+                "$root/dist/Net-Blossom-Server-Backend-S3/lib",
+                "$root/local/lib/perl5",
+                "$root/local/lib/perl5/$Config::Config{archname}",
+                "$root/local/lib/perl5/$Config::Config{version}",
+                "$root/local/lib/perl5/$Config::Config{version}/$Config::Config{archname}",
+            ), "\n";
+          ' >> "$GITHUB_ENV"
+
+      - name: Install backend dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-SQLite
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-Postgres
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-S3
+
+      - name: Run live Ceph tests
+        run: |
+          export NET_BLOSSOM_S3_ENDPOINT=http://127.0.0.1:3900
+          export NET_BLOSSOM_S3_PEER_ENDPOINT=http://127.0.0.1:3901
+          export NET_BLOSSOM_S3_REGION=us-east-1
+          NET_BLOSSOM_S3_BUCKET="$(kubectl -n default get configmap blossom-ceph-bucket -o jsonpath='{.data.BUCKET_NAME}')"
+          NET_BLOSSOM_S3_ACCESS_KEY_ID="$(kubectl -n default get secret blossom-ceph-bucket -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 --decode)"
+          NET_BLOSSOM_S3_SECRET_ACCESS_KEY="$(kubectl -n default get secret blossom-ceph-bucket -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 --decode)"
+          export NET_BLOSSOM_S3_BUCKET NET_BLOSSOM_S3_ACCESS_KEY_ID NET_BLOSSOM_S3_SECRET_ACCESS_KEY
+          mapfile -t rgw_pods < <(kubectl -n rook-ceph get pod -l app=rook-ceph-rgw \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort)
+          test "${#rgw_pods[@]}" -eq 3
+          kubectl -n rook-ceph port-forward "pod/${rgw_pods[0]}" 3900:8080 \
+            > "$RUNNER_TEMP/ceph-rgw-1-port-forward.log" 2>&1 &
+          first_port_forward_pid=$!
+          kubectl -n rook-ceph port-forward "pod/${rgw_pods[1]}" 3901:8080 \
+            > "$RUNNER_TEMP/ceph-rgw-2-port-forward.log" 2>&1 &
+          second_port_forward_pid=$!
+          trap 'kill "$first_port_forward_pid" "$second_port_forward_pid"' EXIT
+          for port in 3900 3901; do
+            ready=false
+            for attempt in {1..60}; do
+              if curl --silent --output /dev/null "http://127.0.0.1:$port/"; then
+                ready=true
+                break
+              fi
+              echo "Waiting for Ceph RGW on port $port ($attempt/60)"
+              sleep 1
+            done
+            test "$ready" = true
+          done
+          prove -lv \
+            dist/Net-Blossom-Server-Backend-S3/t/20-LiveS3.t \
+            dist/Net-Blossom-Server-Backend-S3/t/21-LiveMultiNode.t
+
+      - name: Ceph diagnostics
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl -n rook-ceph get pods -o wide || true
+          kubectl -n rook-ceph get cephcluster,cephobjectstore -o yaml || true
+          kubectl -n rook-ceph logs deployment/rook-ceph-operator --tail=500 || true
