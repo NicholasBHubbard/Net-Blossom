@@ -26,6 +26,7 @@ WriteMakefile(
     TEST_REQUIRES    => {
         'DBD::SQLite' => '0',
         'DBI'         => '0',
+        'HTTP::Message' => '0',
         'Net::Blossom::Server::Backend::SQLite' => '0.001002',
         'Test::More'  => '0',
     },
