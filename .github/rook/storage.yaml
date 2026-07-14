@@ -1,0 +1,76 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: blossom-ceph-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blossom-ceph-loop100
+spec:
+  capacity:
+    storage: 8Gi
+  volumeMode: Block
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: blossom-ceph-local
+  local:
+    path: /dev/loop100
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - blossom-ceph-worker
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blossom-ceph-loop101
+spec:
+  capacity:
+    storage: 8Gi
+  volumeMode: Block
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: blossom-ceph-local
+  local:
+    path: /dev/loop101
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - blossom-ceph-worker2
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blossom-ceph-loop102
+spec:
+  capacity:
+    storage: 8Gi
+  volumeMode: Block
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: blossom-ceph-local
+  local:
+    path: /dev/loop102
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - blossom-ceph-worker3

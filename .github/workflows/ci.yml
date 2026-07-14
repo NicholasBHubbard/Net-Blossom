@@ -185,7 +185,7 @@ jobs:
   ceph:
     name: Ceph three-node S3
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     services:
       postgres:
@@ -216,10 +216,10 @@ jobs:
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
         with:
           tool-cache: false
-          large-packages: false
-          android: false
-          dotnet: false
-          haskell: false
+          large-packages: true
+          android: true
+          dotnet: true
+          haskell: true
 
       - name: Create Ceph loop devices
         run: |
@@ -261,6 +261,7 @@ jobs:
           grep 'ROOK_CEPH_ALLOW_LOOP_DEVICES: "true"' "$RUNNER_TEMP/rook-operator.yaml"
           kubectl create -f "$RUNNER_TEMP/rook-operator.yaml"
           kubectl -n rook-ceph rollout status deployment/rook-ceph-operator --timeout=5m
+          kubectl create -f .github/rook/storage.yaml
           kubectl create -f .github/rook/cluster.yaml
           kubectl create -f "$rook_url/toolbox.yaml"
 
@@ -398,5 +399,8 @@ jobs:
         run: |
           kubectl get nodes -o wide || true
           kubectl -n rook-ceph get pods -o wide || true
+          kubectl get persistentvolumes,persistentvolumeclaims -A -o wide || true
+          kubectl -n rook-ceph describe pod -l app=rook-ceph-osd || true
+          kubectl -n rook-ceph describe pod -l app=rook-ceph-osd-prepare || true
           kubectl -n rook-ceph get cephcluster,cephobjectstore -o yaml || true
           kubectl -n rook-ceph logs deployment/rook-ceph-operator --tail=500 || true

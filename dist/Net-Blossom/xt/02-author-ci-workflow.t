@@ -39,6 +39,15 @@ if (-f $cluster_config) {
     $cluster = do { local $/; <$cluster_fh> };
 }
 
+my $storage_config = "$root/.github/rook/storage.yaml";
+ok(-f $storage_config, 'Ceph local block storage configuration exists');
+my $storage = '';
+if (-f $storage_config) {
+    open my $storage_fh, '<', $storage_config
+        or die "Unable to read $storage_config: $!";
+    $storage = do { local $/; <$storage_fh> };
+}
+
 my $object_config = "$root/.github/rook/object.yaml";
 ok(-f $object_config, 'Ceph object-store configuration exists');
 my $object = '';
@@ -112,6 +121,8 @@ unlike($yaml, qr/^  ceph:.*?^\s{4}(?:if|continue-on-error):/ms,
     'Ceph job is not conditional or allowed to fail');
 like($yaml, qr/Free disk space.*?tool-cache:\s*false/s,
     'Ceph disk cleanup preserves the tool cache required by KinD');
+like($yaml, qr/Free disk space.*?large-packages:\s*true.*?android:\s*true.*?dotnet:\s*true.*?haskell:\s*true/s,
+    'Ceph disk cleanup frees space required by the monitor database');
 like($yaml, qr/rook\/rook\/v1\.20\.2/,
     'CI pins Rook release manifests');
 like($yaml, qr/kindest\/node:v1\.36\.1/,
@@ -124,6 +135,8 @@ like($yaml, qr/\.pgmap\.num_pgs\s*>\s*0/,
     'Ceph gate requires placement groups');
 like($yaml, qr/all\(\.pgmap\.pgs_by_state\[\];\s*\.state_name\s*==\s*"active\+clean"\)/,
     'Ceph gate requires every placement group to be active and clean');
+like($yaml, qr/kubectl create -f \.github\/rook\/storage\.yaml.*?kubectl create -f \.github\/rook\/cluster\.yaml/s,
+    'CI creates local block volumes before the Ceph cluster');
 like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/t\/21-LiveMultiNode\.t/,
     'CI runs the live cross-node S3 backend test');
 like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[0\]\}"\s+3900:8080/,
@@ -145,10 +158,20 @@ for my $index (0 .. 2) {
 }
 like($cluster, qr/osd_memory_target:\s*["']?2147483648["']?/,
     'Ceph OSD memory target is valid and bounded for the CI runner');
-like($cluster, qr/placement:.*?osd:.*?podAntiAffinity:.*?requiredDuringSchedulingIgnoredDuringExecution:/s,
-    'Ceph requires OSD anti-affinity');
-like($cluster, qr/requiredDuringSchedulingIgnoredDuringExecution:.*?key:\s*app\s*.*?values:\s*\n\s*-\s*rook-ceph-osd\s*.*?topologyKey:\s*kubernetes\.io\/hostname/s,
-    'Ceph spreads OSD pods across worker hostnames');
+like($cluster, qr/storageClassDeviceSets:.*?count:\s*3\b.*?portable:\s*false.*?storageClassName:\s*blossom-ceph-local.*?volumeMode:\s*Block/s,
+    'Ceph uses three non-portable raw block PVCs');
+unlike($cluster, qr/^\s+nodes:\s*\n.*?\/dev\/loop/ms,
+    'Ceph does not discover loop devices through host LVM');
+like($storage, qr/kubernetes\.io\/no-provisioner.*?volumeBindingMode:\s*WaitForFirstConsumer/s,
+    'Ceph local storage class waits for node-aware scheduling');
+is(() = $storage =~ /^kind:\s*PersistentVolume\s*$/mg, 3,
+    'Ceph defines three static local block volumes');
+for my $index (0 .. 2) {
+    my $device = 100 + $index;
+    my $node = $index ? "blossom-ceph-worker" . ($index + 1) : 'blossom-ceph-worker';
+    like($storage, qr/local:\s*\n\s+path:\s*\/dev\/loop$device\b.*?values:\s*\n\s+-\s*$node\b/s,
+        "Ceph loop$device volume is pinned to $node");
+}
 like($object, qr/metadataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,
     'Ceph object metadata is replicated across three nodes');
 like($object, qr/dataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,

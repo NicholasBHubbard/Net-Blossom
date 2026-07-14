@@ -24,30 +24,33 @@ spec:
     enabled: false
   cleanupPolicy:
     confirmation: ""
-  placement:
-    osd:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                    - rook-ceph-osd
-            topologyKey: kubernetes.io/hostname
   storage:
-    useAllNodes: false
-    useAllDevices: false
-    nodes:
-      - name: blossom-ceph-worker
-        devices:
-          - name: /dev/loop100
-      - name: blossom-ceph-worker2
-        devices:
-          - name: /dev/loop101
-      - name: blossom-ceph-worker3
-        devices:
-          - name: /dev/loop102
+    storageClassDeviceSets:
+      - name: local
+        count: 3
+        portable: false
+        encrypted: false
+        placement:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - rook-ceph-osd
+                topologyKey: kubernetes.io/hostname
+        volumeClaimTemplates:
+          - metadata:
+              name: data
+            spec:
+              resources:
+                requests:
+                  storage: 8Gi
+              storageClassName: blossom-ceph-local
+              volumeMode: Block
+              accessModes:
+                - ReadWriteOnce
   disruptionManagement:
     managePodBudgets: false
   cephConfig:
