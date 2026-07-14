@@ -131,8 +131,18 @@ like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[0\]\}"\s+3900:8080/,
 like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[1\]\}"\s+3901:8080/,
     'Ceph test forwards a different RGW pod');
 
-is(() = $kind =~ /^\s*- role: worker\s*$/mg, 3,
+my @workers = $kind =~ /(^  - role: worker\n.*?)(?=^  - role:|\z)/msg;
+is(scalar @workers, 3,
     'Ceph KinD cluster has three worker nodes');
+unlike($kind, qr/^\s*-\s+hostPath:\s*\/dev\s*$/m,
+    'Ceph workers do not share the host device directory');
+for my $index (0 .. 2) {
+    my $device = 100 + $index;
+    like($workers[$index], qr/^\s*-\s+hostPath:\s*\/dev\/loop$device\s*$/m,
+        "Ceph worker " . ($index + 1) . " receives only loop$device");
+    is(() = $workers[$index] =~ /^\s*-\s+hostPath:\s*\/dev\/loop\d+\s*$/mg, 1,
+        "Ceph worker " . ($index + 1) . ' receives one loop device');
+}
 like($cluster, qr/osd_memory_target:\s*["']?2147483648["']?/,
     'Ceph OSD memory target is valid and bounded for the CI runner');
 like($object, qr/metadataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,

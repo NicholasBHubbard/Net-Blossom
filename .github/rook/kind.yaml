@@ -4,24 +4,24 @@ nodes:
   - role: control-plane
   - role: worker
     extraMounts:
-      - hostPath: /dev
-        containerPath: /dev
+      - hostPath: /dev/loop100
+        containerPath: /dev/loop100
         propagation: HostToContainer
       - hostPath: /run/udev
         containerPath: /run/udev
         propagation: HostToContainer
   - role: worker
     extraMounts:
-      - hostPath: /dev
-        containerPath: /dev
+      - hostPath: /dev/loop101
+        containerPath: /dev/loop101
         propagation: HostToContainer
       - hostPath: /run/udev
         containerPath: /run/udev
         propagation: HostToContainer
   - role: worker
     extraMounts:
-      - hostPath: /dev
-        containerPath: /dev
+      - hostPath: /dev/loop102
+        containerPath: /dev/loop102
         propagation: HostToContainer
       - hostPath: /run/udev
         containerPath: /run/udev
