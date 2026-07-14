@@ -215,7 +215,7 @@ jobs:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
         with:
-          tool-cache: true
+          tool-cache: false
           large-packages: false
           android: false
           dotnet: false

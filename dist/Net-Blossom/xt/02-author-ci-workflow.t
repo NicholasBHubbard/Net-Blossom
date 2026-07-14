@@ -101,6 +101,8 @@ like($yaml, qr/^  pull_request:\s*\n\njobs:/m,
     'CI runs the mandatory jobs on every pull request');
 unlike($yaml, qr/^  ceph:.*?^\s{4}(?:if|continue-on-error):/ms,
     'Ceph job is not conditional or allowed to fail');
+like($yaml, qr/Free disk space.*?tool-cache:\s*false/s,
+    'Ceph disk cleanup preserves the tool cache required by KinD');
 like($yaml, qr/rook\/rook\/v1\.20\.2/,
     'CI pins Rook release manifests');
 like($yaml, qr/kindest\/node:v1\.36\.1/,
