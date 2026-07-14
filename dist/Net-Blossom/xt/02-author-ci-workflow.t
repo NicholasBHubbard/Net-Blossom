@@ -30,6 +30,15 @@ if (-f $kind_config) {
     $kind = do { local $/; <$kind_fh> };
 }
 
+my $cluster_config = "$root/.github/rook/cluster.yaml";
+ok(-f $cluster_config, 'Ceph cluster configuration exists');
+my $cluster = '';
+if (-f $cluster_config) {
+    open my $cluster_fh, '<', $cluster_config
+        or die "Unable to read $cluster_config: $!";
+    $cluster = do { local $/; <$cluster_fh> };
+}
+
 my $object_config = "$root/.github/rook/object.yaml";
 ok(-f $object_config, 'Ceph object-store configuration exists');
 my $object = '';
@@ -116,6 +125,8 @@ like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[1\]\}"\s+3901:8080/,
 
 is(() = $kind =~ /^\s*- role: worker\s*$/mg, 3,
     'Ceph KinD cluster has three worker nodes');
+like($cluster, qr/osd_memory_target:\s*["']?2147483648["']?/,
+    'Ceph OSD memory target is valid and bounded for the CI runner');
 like($object, qr/metadataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,
     'Ceph object metadata is replicated across three nodes');
 like($object, qr/dataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,

@@ -41,4 +41,4 @@ spec:
     managePodBudgets: false
   cephConfig:
     global:
-      osd_memory_target: "536870912"
+      osd_memory_target: "2147483648"
