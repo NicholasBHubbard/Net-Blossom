@@ -1,0 +1,44 @@
+#!/bin/sh
+
+set -eu
+
+if [ "${1-}" = '--all' ]; then
+    [ "$#" -eq 1 ] || {
+        echo 'usage: live-s3-required [--all]' >&2
+        exit 2
+    }
+    echo true
+    exit 0
+fi
+
+[ "$#" -eq 0 ] || {
+    echo 'usage: live-s3-required [--all]' >&2
+    exit 2
+}
+
+while IFS= read -r path; do
+    case "$path" in
+        dist/Net-Blossom/lib/*|\
+        dist/Net-Blossom/Makefile.PL|\
+        dist/Net-Blossom-Server/lib/*|\
+        dist/Net-Blossom-Server/Makefile.PL|\
+        dist/Net-Blossom-Server-Backend-SQLite/lib/*|\
+        dist/Net-Blossom-Server-Backend-SQLite/t/*|\
+        dist/Net-Blossom-Server-Backend-SQLite/Makefile.PL|\
+        dist/Net-Blossom-Server-Backend-Postgres/lib/*|\
+        dist/Net-Blossom-Server-Backend-Postgres/t/*|\
+        dist/Net-Blossom-Server-Backend-Postgres/Makefile.PL|\
+        dist/Net-Blossom-Server-Backend-S3/lib/*|\
+        dist/Net-Blossom-Server-Backend-S3/t/*|\
+        dist/Net-Blossom-Server-Backend-S3/Makefile.PL|\
+        .github/workflows/ci.yml|\
+        .github/garage.toml|\
+        .github/rook/*|\
+        .github/scripts/live-s3-required)
+            echo true
+            exit 0
+            ;;
+    esac
+done
+
+echo false

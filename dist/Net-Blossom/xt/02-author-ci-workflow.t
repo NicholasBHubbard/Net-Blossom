@@ -1,6 +1,8 @@
 use strictures 2;
 
 use FindBin;
+use IPC::Open3 qw(open3);
+use Symbol qw(gensym);
 use Test::More;
 
 plan skip_all => 'AUTHOR_TESTING is not set'
@@ -20,6 +22,40 @@ done_testing and exit unless -f $workflow;
 open my $fh, '<', $workflow
     or die "Unable to read $workflow: $!";
 my $yaml = do { local $/; <$fh> };
+my $test_job = _job($yaml, 'test');
+my $changes_job = _job($yaml, 'changes');
+my $garage_job = _job($yaml, 'garage');
+my $ceph_job = _job($yaml, 'ceph');
+
+my $live_s3_gate = "$root/.github/scripts/live-s3-required";
+ok(-x $live_s3_gate, 'live S3 change gate exists and is executable');
+if (-x $live_s3_gate) {
+    for my $path (
+        'dist/Net-Blossom/lib/Net/Blossom.pm',
+        'dist/Net-Blossom-Server/lib/Net/Blossom/Server.pm',
+        'dist/Net-Blossom-Server-Backend-SQLite/lib/Net/Blossom/Server/Backend/SQLite/MetadataStore.pm',
+        'dist/Net-Blossom-Server-Backend-Postgres/lib/Net/Blossom/Server/Backend/Postgres/MetadataStore.pm',
+        'dist/Net-Blossom-Server-Backend-S3/lib/Net/Blossom/Server/Backend/S3.pm',
+        'dist/Net-Blossom-Server-Backend-S3/t/20-LiveS3.t',
+        'dist/Net-Blossom-Server-Backend-S3/Makefile.PL',
+        '.github/workflows/ci.yml',
+        '.github/garage.toml',
+        '.github/rook/cluster.yaml',
+    ) {
+        is(_run_gate($live_s3_gate, [], [$path]), 'true',
+            "$path requires live S3 tests");
+    }
+    for my $path (
+        'README.md',
+        'dist/Net-Blossom-Server-Backend-S3/Changes',
+        'dist/Net-Blossom-Server-Backend-S3/xt/01-author-pod.t',
+    ) {
+        is(_run_gate($live_s3_gate, [], [$path]), 'false',
+            "$path does not require live S3 tests");
+    }
+    is(_run_gate($live_s3_gate, ['--all'], []), 'true',
+        'push, schedule, and manual runs can require all live S3 tests');
+}
 
 my $kind_config = "$root/.github/rook/kind.yaml";
 ok(-f $kind_config, 'Ceph CI KinD configuration exists');
@@ -115,10 +151,35 @@ like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/xt\/04-author-coverage\.t/,
     'CI runs S3 backend coverage author test');
 like($yaml, qr/^  ceph:\s*$/m,
     'CI has a dedicated mandatory Ceph job');
-like($yaml, qr/^  pull_request:\s*\n\njobs:/m,
-    'CI runs the mandatory jobs on every pull request');
-unlike($yaml, qr/^  ceph:.*?^\s{4}(?:if|continue-on-error):/ms,
-    'Ceph job is not conditional or allowed to fail');
+like($yaml, qr/^  garage:\s*$/m,
+    'CI has a dedicated Garage job');
+like($yaml, qr/^  pull_request:\s*$/m,
+    'CI runs on every pull request');
+like($yaml, qr/^  schedule:\s*$/m,
+    'CI has a scheduled full integration run');
+like($yaml, qr/^  workflow_dispatch:\s*$/m,
+    'CI supports a manual full integration run');
+like($changes_job, qr/outputs:.*?live_s3:\s*\$\{\{\s*steps\.gate\.outputs\.required\s*\}\}/s,
+    'change detection publishes one live S3 decision');
+like($garage_job, qr/^    needs:\s*changes\s*$/m,
+    'Garage uses the shared change decision');
+like($ceph_job, qr/^    needs:\s*changes\s*$/m,
+    'Ceph uses the shared change decision');
+my $live_s3_condition = q{    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.live_s3 == 'true') }}};
+like($garage_job, qr/^\Q$live_s3_condition\E$/m,
+    'Garage runs when required or when change detection fails');
+like($ceph_job, qr/^\Q$live_s3_condition\E$/m,
+    'Ceph runs when required or when change detection fails');
+unlike($garage_job, qr/continue-on-error:/,
+    'Garage failures remain mandatory when the job runs');
+unlike($ceph_job, qr/continue-on-error:/,
+    'Ceph failures remain mandatory when the job runs');
+unlike($test_job, qr/dxflrs\/garage|NET_BLOSSOM_S3_ENDPOINT/,
+    'Perl matrix runs simulated S3 tests without provisioning Garage');
+like($garage_job, qr/dxflrs\/garage:v2\.3\.0/,
+    'dedicated Garage job provisions the live cluster');
+like($garage_job, qr/dist\/Net-Blossom-Server-Backend-S3\/t\/20-LiveS3\.t.*?dist\/Net-Blossom-Server-Backend-S3\/t\/21-LiveMultiNode\.t/s,
+    'Garage runs both live S3 tests');
 like($yaml, qr/Free disk space.*?tool-cache:\s*false/s,
     'Ceph disk cleanup preserves the tool cache required by KinD');
 like($yaml, qr/Free disk space.*?large-packages:\s*true.*?android:\s*true.*?dotnet:\s*true.*?haskell:\s*true/s,
@@ -192,4 +253,24 @@ sub _repo_root {
     }
 
     die "Unable to find repository root from $FindBin::Bin";
+}
+
+sub _job {
+    my ($yaml, $name) = @_;
+    my ($job) = $yaml =~ /(^  \Q$name\E:\s*\n.*?)(?=^  [a-zA-Z0-9_-]+:\s*\n|\z)/ms;
+    return defined $job ? $job : '';
+}
+
+sub _run_gate {
+    my ($script, $args, $paths) = @_;
+    my $error = gensym;
+    my $pid = open3(my $input, my $output, $error, $script, @$args);
+    print {$input} "$_\n" for @$paths;
+    close $input or die "Unable to close live S3 gate input: $!";
+    my $result = do { local $/; <$output> };
+    my $stderr = do { local $/; <$error> };
+    waitpid $pid, 0;
+    die "Live S3 gate failed: $stderr" if $?;
+    $result =~ s/\s+\z//;
+    return $result;
 }

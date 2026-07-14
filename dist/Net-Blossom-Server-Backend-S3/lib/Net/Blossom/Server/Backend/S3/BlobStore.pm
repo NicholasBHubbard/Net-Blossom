@@ -74,9 +74,9 @@ sub BUILDARGS {
     croak "multipart_part_size must be at most 5 GiB"
         if $multipart_part_size > 5 * $GIB;
 
-    my $generation = $args{generation} || sub {
-        return unpack 'H*', random_bytes(16);
-    };
+    my $generation = defined $args{generation}
+        ? $args{generation}
+        : sub { return unpack 'H*', random_bytes(16) };
     croak "generation must be a code reference" unless ref($generation) eq 'CODE';
 
     return {

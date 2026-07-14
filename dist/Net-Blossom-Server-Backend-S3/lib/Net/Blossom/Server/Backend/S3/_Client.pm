@@ -13,11 +13,11 @@ use URI;
 
 my $MIB = 1024 * 1024;
 my $GIB = 1024 * $MIB;
-my $TIB = 1024 * $GIB;
+my $GB = 1_000_000_000;
 my $MAX_PARTS = 10_000;
 my $MAX_PART_SIZE = 5 * $GIB;
-my $MAX_OBJECT_SIZE = 5 * $TIB;
-my $MAX_SINGLE_PUT = 5 * $GIB;
+my $MAX_OBJECT_SIZE = $MAX_PARTS * $MAX_PART_SIZE;
+my $MAX_SINGLE_PUT = 5 * $GB;
 
 sub BUILDARGS {
     my $class = shift;
@@ -60,7 +60,8 @@ sub BUILDARGS {
 
 sub upload_file {
     my ($self, %args) = @_;
-    croak "S3 object size exceeds 5 TiB" if $args{size} > $MAX_OBJECT_SIZE;
+    croak "S3 object size exceeds multipart limit"
+        if $args{size} > $MAX_OBJECT_SIZE;
     croak "multipart part size exceeds 5 GiB"
         if $args{multipart_part_size} > $MAX_PART_SIZE;
     return $args{size} < $args{multipart_threshold}

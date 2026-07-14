@@ -126,6 +126,38 @@ $client->upload_file(
 );
 is(scalar @{$object->parts}, 1, 'an object at the threshold uses multipart upload');
 
+$object = Local::Object->new;
+$client = Net::Blossom::Server::Backend::S3::_Client->new(
+    bucket_object => Local::Bucket->new(_object => $object),
+);
+$client->upload_file(
+    key                 => 'single-put-boundary-key',
+    path                => $small_path,
+    size                => 5_000_000_000,
+    content_type        => 'text/plain',
+    sha256              => '4' x 64,
+    multipart_threshold => 6_000_000_000,
+    multipart_part_size => 5 * 1024 * 1024,
+);
+is(scalar @{$object->put_filenames}, 1, 'an object at 5 GB may use one PUT');
+is(scalar @{$object->parts}, 0, 'an object at 5 GB need not use multipart upload');
+
+$object = Local::Object->new;
+$client = Net::Blossom::Server::Backend::S3::_Client->new(
+    bucket_object => Local::Bucket->new(_object => $object),
+);
+$client->upload_file(
+    key                 => 'single-put-limit-key',
+    path                => $small_path,
+    size                => 5_000_000_001,
+    content_type        => 'text/plain',
+    sha256              => '4' x 64,
+    multipart_threshold => 6_000_000_000,
+    multipart_part_size => 5 * 1024 * 1024,
+);
+is(scalar @{$object->put_filenames}, 0, 'an object above 5 GB does not use one PUT');
+is(scalar @{$object->parts}, 1, 'an object above 5 GB uses multipart upload');
+
 my ($large_fh, $large_path) = tempfile();
 binmode $large_fh;
 print {$large_fh} 'x' x (11 * 1024 * 1024);
@@ -247,9 +279,13 @@ $ok = eval {
 ok(!$ok, 'abort failure does not hide the upload failure');
 like($@, qr/multipart part 1 failed/, 'primary multipart failure is preserved');
 
+$object = Local::Object->new;
+$client = Net::Blossom::Server::Backend::S3::_Client->new(
+    bucket_object => Local::Bucket->new(_object => $object),
+);
 $ok = eval {
     $client->upload_file(
-        key                 => 'too-large-key',
+        key                 => 'above-legacy-limit-key',
         path                => '/does/not/exist',
         size                => 5 * 1024 * 1024 * 1024 * 1024 + 1,
         content_type        => 'application/octet-stream',
@@ -259,8 +295,35 @@ $ok = eval {
     );
     1;
 };
-ok(!$ok, 'objects cannot exceed the S3 maximum');
-like($@, qr/object size exceeds 5 TiB/, 'oversized object is reported before file access');
+ok(!$ok, 'a simulated object above 5 TiB reaches file access');
+unlike($@, qr/object size exceeds/, 'the former 5 TiB object limit is not enforced');
+like($@, qr/unable to read upload temp file/, 'the simulated upload passes size validation');
+is($object->abort_count, 1, 'failed simulated upload is aborted after size validation');
+
+my $maximum_object_size = 10_000 * 5 * 1024 * 1024 * 1024;
+is(
+    Net::Blossom::Server::Backend::S3::_Client::_part_size_for(
+        $maximum_object_size,
+        16 * 1024 * 1024,
+    ),
+    5 * 1024 * 1024 * 1024,
+    'the maximum object fits exactly 10,000 maximum-size parts',
+);
+$ok = eval {
+    $client->upload_file(
+        key                 => 'too-large-key',
+        path                => '/does/not/exist',
+        size                => $maximum_object_size + 1,
+        content_type        => 'application/octet-stream',
+        sha256              => '2' x 64,
+        multipart_threshold => 1,
+        multipart_part_size => 5 * 1024 * 1024,
+    );
+    1;
+};
+ok(!$ok, 'objects cannot exceed the S3 multipart maximum');
+like($@, qr/object size exceeds multipart limit/,
+    'an object above 10,000 maximum-size parts is rejected before file access');
 
 $object = Local::Object->new(head => {ContentLength => 10}, range_body => '2345');
 $client = Net::Blossom::Server::Backend::S3::_Client->new(

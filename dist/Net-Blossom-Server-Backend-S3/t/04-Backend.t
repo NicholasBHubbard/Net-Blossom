@@ -93,7 +93,7 @@ my $ok = eval { _upload($rollback_storage, $rollback_body, 3); 1 };
 ok(!$ok, 'metadata rollback makes commit fail');
 like($@, qr/injected transaction rollback/, 'rollback error is preserved');
 is($metadata->find_blob($rollback_sha), undef, 'rolled-back metadata is not visible');
-is(scalar keys %{$rollback_client->objects}, 1, 'durable object is retained after rollback ambiguity');
+is(scalar keys %{$rollback_client->objects}, 1, 'durable object is retained after metadata rollback');
 
 _reset_metadata($dbh);
 $metadata->deploy_schema;
@@ -110,6 +110,29 @@ ok(!$ok, 'ambiguous transaction outcome reaches the caller');
 like($@, qr/injected disconnect after commit/, 'ambiguous commit error is preserved');
 ok(defined $metadata->find_blob($ambiguous_sha), 'committed metadata remains visible');
 is(scalar keys %{$ambiguous_client->objects}, 1, 'committed object is not removed after disconnect');
+
+_reset_metadata($dbh);
+$metadata->deploy_schema;
+my @upload_cleanup_errors;
+my $cleanup_storage = Net::Blossom::Server::Backend::S3->new(
+    metadata_store => $metadata,
+    blob_store     => Local::CleanupFailingBlobStore->new,
+    base_url       => 'https://cdn.example.test',
+    cleanup_error_handler => sub { push @upload_cleanup_errors, [@_] },
+);
+my $cleanup_body = 'post-commit cleanup failure';
+my $cleanup_result = _upload($cleanup_storage, $cleanup_body, 5);
+ok($cleanup_result->created, 'post-commit cleanup failure does not fail the upload');
+is(scalar @upload_cleanup_errors, 1, 'post-commit upload cleanup failure is reported');
+like($upload_cleanup_errors[0][0], qr/injected upload cleanup failure/,
+    'upload cleanup callback receives the failure');
+is($upload_cleanup_errors[0][1], 'cleanup-' . sha256_hex($cleanup_body),
+    'upload cleanup callback receives the committed storage key');
+my $cleanup_duplicate = _upload($cleanup_storage, $cleanup_body, 6);
+ok(!$cleanup_duplicate->created, 'duplicate remains successful when abort cleanup fails');
+is(scalar @upload_cleanup_errors, 2, 'duplicate upload cleanup failure is reported');
+is($upload_cleanup_errors[1][1], 'cleanup-' . sha256_hex($cleanup_body),
+    'duplicate cleanup callback receives the existing storage key');
 
 done_testing;
 
@@ -178,4 +201,31 @@ sub _reset_metadata {
     sub owner_count { shift->inner->owner_count(@_) }
     sub delete_blob { shift->inner->delete_blob(@_) }
     sub list_blobs { shift->inner->list_blobs(@_) }
+}
+
+{
+    package Local::CleanupFailingBlobStore;
+
+    use Class::Tiny;
+
+    sub deploy_schema { 1 }
+    sub begin_upload { Local::CleanupFailingUpload->new }
+    sub get_blob { undef }
+    sub delete_blob { 0 }
+}
+
+{
+    package Local::CleanupFailingUpload;
+
+    use Class::Tiny;
+
+    sub write { return length $_[1] }
+
+    sub prepare {
+        my ($self, %metadata) = @_;
+        return 'cleanup-' . $metadata{sha256};
+    }
+
+    sub commit { die "injected upload cleanup failure\n" }
+    sub abort { die "injected upload cleanup failure\n" }
 }

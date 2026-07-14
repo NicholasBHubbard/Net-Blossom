@@ -137,6 +137,7 @@ sub _commit_upload {
     my ($self, $upload, %metadata) = @_;
     my $store = $self->metadata_store;
     my $created;
+    my $storage_key;
 
     my $ok = eval {
         $store->with_transaction(sub {
@@ -145,9 +146,10 @@ sub _commit_upload {
 
             if (defined $record) {
                 $created = 0;
+                $storage_key = $record->{storage_key};
             }
             else {
-                my $storage_key = $upload->_prepare(%metadata);
+                $storage_key = $upload->_prepare(%metadata);
                 $created = $store->insert_blob(
                     %metadata,
                     storage_key => $storage_key,
@@ -167,7 +169,7 @@ sub _commit_upload {
     }
 
     my $cleanup_ok = eval { $upload->_cleanup($created); 1 };
-    $self->_report_cleanup_error($@) unless $cleanup_ok;
+    $self->_report_cleanup_error($@, $storage_key) unless $cleanup_ok;
 
     return {
         descriptor => $self->_descriptor(\%metadata),
@@ -288,18 +290,27 @@ Net::Blossom::Server::Backend::S3 - S3-compatible storage for Blossom servers
 
 =head1 SYNOPSIS
 
+    use DBI;
     use Net::Blossom::Server;
     use Net::Blossom::Server::Backend::S3;
     use Net::Blossom::Server::Backend::SQLite::MetadataStore;
 
+    my $sqlite_dbh = DBI->connect('dbi:SQLite:dbname=blossom.sqlite', '', '', {
+        AutoCommit => 1,
+        RaiseError => 1,
+        PrintError => 0,
+    });
+    my $metadata = Net::Blossom::Server::Backend::SQLite::MetadataStore->new(
+        dbh => $sqlite_dbh,
+    );
     my $storage = Net::Blossom::Server::Backend::S3->new(
         metadata_store => $metadata,
         base_url       => 'https://cdn.example.com',
         bucket         => 'blossom',
         endpoint       => 'https://s3.example.com',
         region         => 'us-east-1',
-        access_key_id  => $key,
-        secret_access_key => $secret,
+        access_key_id  => $ENV{AWS_ACCESS_KEY_ID},
+        secret_access_key => $ENV{AWS_SECRET_ACCESS_KEY},
     );
     $storage->deploy_schema;
 
@@ -342,9 +353,15 @@ configuration. It cannot be combined with other connection arguments.
 C<temp_dir> selects the upload staging directory. C<prefix> defaults to
 C<blossom>. C<multipart_threshold>, C<multipart_part_size>, and C<range_size>
 default to 100 MiB, 16 MiB, and 8 MiB. Multipart parts are enlarged when needed
-to remain within S3's 10,000-part limit. Parts must be between 5 MiB and 5 GiB.
-Objects above 5 GiB always use multipart upload. S3's 5 TiB object limit is
-enforced.
+to remain within S3's 10,000-part limit. The configured part size must be
+between 5 MiB and 5 GiB; the final part may be smaller. Objects above 5 GB
+always use multipart upload. The client follows
+L<Amazon S3's multipart limits|https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html>:
+10,000 5-GiB parts, or about 48.8 TiB. Compatible services may impose lower
+limits.
+
+C<generation> may supply an object-key callback for testing. Each result must
+be unique for a given hash. The default uses 128 random bits.
 
 C<cleanup_error_handler> may be a code reference. It receives a post-commit
 cleanup error and the storage key, when available. The default warns.
@@ -355,12 +372,13 @@ combined with S3 client arguments.
 =head1 CONSISTENCY
 
 Each upload uses a new generation-specific object key. Object bytes are durable
-before metadata commits. Deletion commits the metadata change before deleting
-that exact object key, so delayed cleanup cannot erase a later upload of the
-same hash.
+before metadata commits, so the metadata transaction remains open during a new
+object upload. With SQLite metadata, this holds SQLite's write lock during the
+transfer. Deletion commits the metadata change before deleting that exact object
+key, so delayed cleanup cannot erase a later upload of the same hash.
 
-S3 and the metadata database do not share a transaction. An ambiguous database
-failure or failed object deletion can therefore leave an unreachable object.
+S3 and the metadata database do not share a transaction. A database failure or
+failed object deletion can therefore leave an unreachable object.
 The object remains invisible because metadata is authoritative. Operators
 should monitor cleanup errors and may remove unreachable objects separately.
 

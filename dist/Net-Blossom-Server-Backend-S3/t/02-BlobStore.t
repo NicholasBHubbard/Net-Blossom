@@ -118,6 +118,16 @@ my $too_large_part = eval {
 ok(!$too_large_part, 'multipart parts cannot exceed the S3 maximum');
 like($@, qr/at most 5 GiB/, 'oversized multipart part is reported');
 
+my $bad_generation = eval {
+    Net::Blossom::Server::Backend::S3::BlobStore->new(
+        client     => TestS3Client->new,
+        generation => 0,
+    );
+    1;
+};
+ok(!$bad_generation, 'an explicit false generation callback is rejected');
+like($@, qr/generation must be a code reference/, 'invalid generation callback is reported');
+
 done_testing;
 
 sub _staged_file_count {
