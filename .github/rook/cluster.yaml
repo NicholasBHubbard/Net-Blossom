@@ -24,6 +24,17 @@ spec:
     enabled: false
   cleanupPolicy:
     confirmation: ""
+  placement:
+    osd:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - rook-ceph-osd
+            topologyKey: kubernetes.io/hostname
   storage:
     useAllNodes: false
     useAllDevices: false

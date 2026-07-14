@@ -145,6 +145,10 @@ for my $index (0 .. 2) {
 }
 like($cluster, qr/osd_memory_target:\s*["']?2147483648["']?/,
     'Ceph OSD memory target is valid and bounded for the CI runner');
+like($cluster, qr/placement:.*?osd:.*?podAntiAffinity:.*?requiredDuringSchedulingIgnoredDuringExecution:/s,
+    'Ceph requires OSD anti-affinity');
+like($cluster, qr/requiredDuringSchedulingIgnoredDuringExecution:.*?key:\s*app\s*.*?values:\s*\n\s*-\s*rook-ceph-osd\s*.*?topologyKey:\s*kubernetes\.io\/hostname/s,
+    'Ceph spreads OSD pods across worker hostnames');
 like($object, qr/metadataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,
     'Ceph object metadata is replicated across three nodes');
 like($object, qr/dataPool:.*?replicated:\s*\n\s+size:\s*3\b/s,
