@@ -271,7 +271,20 @@ jobs:
           ready=false
           for attempt in {1..180}; do
             if kubectl -n rook-ceph exec "$toolbox" -- ceph status --format json 2>/dev/null \
-                | jq -e '.health.status == "HEALTH_OK" and .osdmap.num_osds == 3 and .osdmap.num_up_osds == 3 and .osdmap.num_in_osds == 3' >/dev/null; then
+                | jq -e '
+                    (
+                      .health.status == "HEALTH_OK"
+                      or (
+                        .health.status == "HEALTH_WARN"
+                        and ([.health.checks | keys[] | select(. != "BLUESTORE_SLOW_OP_ALERT")] | length == 0)
+                      )
+                    )
+                    and .osdmap.num_osds == 3
+                    and .osdmap.num_up_osds == 3
+                    and .osdmap.num_in_osds == 3
+                    and .pgmap.num_pgs > 0
+                    and all(.pgmap.pgs_by_state[]; .state_name == "active+clean")
+                  ' >/dev/null; then
               ready=true
               break
             fi

@@ -116,6 +116,14 @@ like($yaml, qr/rook\/rook\/v1\.20\.2/,
     'CI pins Rook release manifests');
 like($yaml, qr/kindest\/node:v1\.36\.1/,
     'CI pins the Ceph job Kubernetes node image');
+like($yaml, qr/BLUESTORE_SLOW_OP_ALERT/,
+    'Ceph gate permits the loop-device slow-operation warning');
+like($yaml, qr/select\(\. != "BLUESTORE_SLOW_OP_ALERT"\)/,
+    'Ceph gate rejects health warnings unrelated to loop-device performance');
+like($yaml, qr/\.pgmap\.num_pgs\s*>\s*0/,
+    'Ceph gate requires placement groups');
+like($yaml, qr/all\(\.pgmap\.pgs_by_state\[\];\s*\.state_name\s*==\s*"active\+clean"\)/,
+    'Ceph gate requires every placement group to be active and clean');
 like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/t\/21-LiveMultiNode\.t/,
     'CI runs the live cross-node S3 backend test');
 like($yaml, qr/port-forward\s+"pod\/\$\{rgw_pods\[0\]\}"\s+3900:8080/,
