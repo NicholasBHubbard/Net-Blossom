@@ -1,10 +1,2 @@
-Revision history for Net-Blossom-Server-Backend-S3
-
-0.001000  2026-07-14
+0.001000  2026-07-15
     - Initial CPAN release.
-    - Store blob bytes in S3-compatible object storage with multipart uploads
-      and bounded range downloads.
-    - Coordinate object bytes with any Net::Blossom::Server metadata store.
-    - Test the live S3 path with three-node Garage and Ceph clusters using
-      SQLite and Postgres metadata.
-    - Test independent server nodes against shared metadata and object storage.
