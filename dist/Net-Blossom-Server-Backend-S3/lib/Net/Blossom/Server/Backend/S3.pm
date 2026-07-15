@@ -318,18 +318,18 @@ Net::Blossom::Server::Backend::S3 - S3-compatible storage for Blossom servers
 
 =head1 DESCRIPTION
 
-This module provides S3-compatible blob storage for L<Net::Blossom::Server>.
-It works with Amazon S3 and independent implementations such as Ceph and
-Garage.
+This module implements L<Net::Blossom::Server::Storage> with S3-compatible
+object storage. It works with Amazon S3 and independent implementations such
+as Ceph and Garage.
 
 Descriptor and owner metadata are supplied separately through any
 L<Net::Blossom::Server::MetadataStore> implementation. The S3 backend has no
 runtime dependency on a particular database backend.
 
-Uploads are staged in a temporary file. Files below C<multipart_threshold> use
-one PUT; files at or above it use multipart upload. Downloads use bounded range
-requests and may return short reads, so blob bodies are not held in memory in
-full.
+The default blob store stages uploads in a temporary file. Files below
+C<multipart_threshold> use one PUT unless they exceed S3's single-PUT limit.
+Other files use multipart upload. Downloads use bounded range requests and may
+return short reads, so blob bodies are not held in memory in full.
 
 =head1 CONSTRUCTOR
 
@@ -337,9 +337,9 @@ full.
 
     my $storage = Net::Blossom::Server::Backend::S3->new(%args);
 
-Requires C<metadata_store>, C<base_url>, and normally C<bucket>. C<bucket> is
-not needed when a complete C<blob_store> is supplied. Credentials may be passed
-as C<access_key_id>, C<secret_access_key>, and C<session_token>, or read from
+Requires C<metadata_store> and C<base_url>. The default S3 client also requires
+C<bucket>. Credentials may be passed as C<access_key_id>,
+C<secret_access_key>, and C<session_token>, or read from
 C<AWS_ACCESS_KEY_ID>, C<AWS_SECRET_ACCESS_KEY>, and C<AWS_SESSION_TOKEN>.
 
 C<region> defaults to C<us-east-1>. C<endpoint> selects a compatible service;
@@ -363,22 +363,26 @@ limits.
 C<generation> may supply an object-key callback for testing. Each result must
 be unique for a given hash. The default uses 128 random bits.
 
+C<client> may supply an object client that implements C<upload_file>, C<head>,
+C<get_range>, and C<delete>. It cannot be combined with S3 connection options.
+
 C<cleanup_error_handler> may be a code reference. It receives a post-commit
 cleanup error and the storage key, when available. The default warns.
 
-C<blob_store> may be supplied for custom composition or tests and cannot be
-combined with S3 client arguments.
+C<blob_store> may be supplied for custom composition or tests. It cannot be
+combined with any option used to construct the default blob store.
 
 =head1 CONSISTENCY
 
-Each upload uses a new generation-specific object key. Object bytes are durable
-before metadata commits, so the metadata transaction remains open during a new
-object upload. With SQLite metadata, this holds SQLite's write lock during the
-transfer. Deletion commits the metadata change before deleting that exact object
-key, so delayed cleanup cannot erase a later upload of the same hash.
+The default blob store uses a new generation-specific object key for each newly
+stored object. Object bytes are durable before metadata commits, so the metadata
+transaction remains open during a new object upload. Database-backed metadata
+stores also keep their connection occupied. Deletion commits the metadata change
+before deleting that exact object key, so delayed cleanup cannot erase a later
+upload of the same hash.
 
-S3 and the metadata database do not share a transaction. A database failure or
-failed object deletion can therefore leave an unreachable object.
+S3 and the metadata store cannot commit atomically. A metadata failure or failed
+object deletion can therefore leave an unreachable object.
 The object remains invisible because metadata is authoritative. Operators
 should monitor cleanup errors and may remove unreachable objects separately.
 
@@ -393,14 +397,16 @@ rather than an indistinguishable 403 permission error.
 C<t/20-LiveS3.t> runs the same storage contract against any S3-compatible
 endpoint. Set C<NET_BLOSSOM_S3_ENDPOINT>, C<NET_BLOSSOM_S3_BUCKET>,
 C<NET_BLOSSOM_S3_REGION>, C<NET_BLOSSOM_S3_ACCESS_KEY_ID>, and
-C<NET_BLOSSOM_S3_SECRET_ACCESS_KEY>. Set the existing
-C<NET_BLOSSOM_POSTGRES_*> variables to include the Postgres metadata run.
+C<NET_BLOSSOM_S3_SECRET_ACCESS_KEY>. Set C<NET_BLOSSOM_POSTGRES_DSN>,
+C<NET_BLOSSOM_POSTGRES_USER>, and C<NET_BLOSSOM_POSTGRES_PASSWORD> to also run
+the contract with Postgres metadata.
 
 C<t/21-LiveMultiNode.t> repeats cross-node operations through two independent
 backend instances. Set C<NET_BLOSSOM_S3_PEER_ENDPOINT> to route the second
 instance through another S3 gateway; otherwise it uses the primary endpoint.
 
-CI runs both tests against three-node Garage and Ceph clusters.
+When live S3 testing is required, CI runs both tests against three-node Garage
+and Ceph clusters.
 
 =head1 METHODS
 
@@ -414,7 +420,7 @@ Returns the configured metadata store.
 
 =head2 blob_store
 
-Returns the S3 byte store.
+Returns the configured byte store.
 
 =head2 base_url
 
@@ -426,16 +432,17 @@ Returns the post-commit cleanup error callback.
 
 =head2 deploy_schema
 
-Deploys the metadata schema. The S3 byte store has no schema.
+Deploys both store schemas. The default S3 byte store has no schema.
 
 =head2 begin_upload
 
-Starts a file-backed blob upload.
+Starts a blob upload.
 
 =head2 get_blob
 
-Returns a L<Net::Blossom::Server::BlobResult> with a ranged-read stream, or
-C<undef> when metadata or object bytes are absent.
+Returns a L<Net::Blossom::Server::BlobResult>, or C<undef> when metadata or
+object bytes are absent. The default byte store returns a ranged-read stream
+for nonempty objects.
 
 =head2 head_blob
 
@@ -443,10 +450,12 @@ Returns the blob descriptor from metadata, or C<undef> when absent.
 
 =head2 delete_blob
 
-Removes an owner or blob from metadata, then removes unowned object bytes.
+With C<pubkey>, removes that owner and deletes the object after its final owner
+is removed. Without C<pubkey>, deletes the whole blob.
 
 =head2 list_blobs
 
-Returns the metadata store's descriptors for one pubkey.
+Returns an array reference of L<Net::Blossom::BlobDescriptor> objects for one
+pubkey. C<cursor> and C<limit> follow L<Net::Blossom::Server::Storage>.
 
 =cut

@@ -354,6 +354,9 @@ than requested so memory remains bounded by the configured range size.
 Accepts the S3 connection, staging, multipart, and range options documented by
 L<Net::Blossom::Server::Backend::S3/new>.
 
+C<client> may provide a custom object client. It cannot be combined with S3
+connection options.
+
 =head1 METHODS
 
 =head2 BUILDARGS
@@ -362,7 +365,7 @@ Normalizes and validates constructor arguments for C<Class::Tiny>.
 
 =head2 client
 
-Returns the internal object client.
+Returns the object client used for S3 requests.
 
 =head2 temp_dir
 
@@ -378,7 +381,7 @@ Returns the ranged-download chunk size in bytes.
 
 =head2 multipart_threshold
 
-Returns the size at which multipart upload is used.
+Returns the configured multipart-upload threshold.
 
 =head2 multipart_part_size
 
@@ -386,7 +389,7 @@ Returns the preferred multipart part size.
 
 =head2 generation
 
-Returns the callback used to create unique object-key generations.
+Returns the callback used to create object-key generation segments.
 
 =head2 deploy_schema
 
@@ -398,8 +401,9 @@ Returns a file-backed blob upload writer.
 
 =head2 get_blob
 
-Returns an empty scalar or ranged stream for an object, or C<undef> when it is
-absent.
+Returns C<''> for an empty object, a ranged stream for a nonempty object, or
+C<undef> when the object is absent. When C<size> is supplied, a size mismatch
+is an error.
 
 =head2 delete_blob
 
