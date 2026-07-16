@@ -1,5 +1,2 @@
-0.001000  2026-07-15
+0.001000  2026-07-16
     - Initial CPAN release.
-    - Store blob bytes as streamed, hash-sharded files.
-    - Coordinate filesystem bytes with any Net::Blossom::Server metadata store.
-    - Prevent concurrent publication from overwriting an existing generation.
