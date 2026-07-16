@@ -6,7 +6,7 @@ use Carp qw(croak);
 use Class::Tiny qw(root generation);
 use Crypt::PRNG qw(random_bytes);
 use Errno qw(EEXIST ENOENT);
-use Fcntl qw(O_RDONLY);
+use Fcntl qw(O_RDONLY SEEK_SET);
 use File::Path qw(make_path);
 use File::Spec;
 use File::Sync qw(fsync);
@@ -66,6 +66,45 @@ sub begin_upload {
 
 sub get_blob {
     my ($self, $storage_key, %opts) = @_;
+    my ($fh, $size) = $self->_open_blob($storage_key, %opts);
+    return unless defined $fh;
+    if (!$size) {
+        close $fh or croak "unable to close filesystem object: $!";
+        return '';
+    }
+
+    return Net::Blossom::Server::Backend::Filesystem::BlobStore::_Stream->new(
+        fh   => $fh,
+        size => $size,
+    );
+}
+
+sub get_blob_range {
+    my ($self, $storage_key, %opts) = @_;
+    my %known = map { $_ => 1 } qw(offset length size);
+    my @unknown = grep { !$known{$_} } keys %opts;
+    croak "unknown option(s): " . join(', ', sort @unknown) if @unknown;
+    _range_options(\%opts);
+
+    my ($fh, $size) = $self->_open_blob(
+        $storage_key,
+        (defined $opts{size} ? (size => $opts{size}) : ()),
+    );
+    return unless defined $fh;
+    croak "range exceeds file size"
+        if $opts{offset} + $opts{length} > $size;
+    seek($fh, $opts{offset}, SEEK_SET)
+        or croak "unable to seek filesystem object: $!";
+
+    return Net::Blossom::Server::Backend::Filesystem::BlobStore::_Stream->new(
+        fh        => $fh,
+        size      => $size,
+        remaining => $opts{length},
+    );
+}
+
+sub _open_blob {
+    my ($self, $storage_key, %opts) = @_;
     my $path = $self->_path_for_key($storage_key);
     sysopen my $fh, $path, O_RDONLY or do {
         return if $! == ENOENT;
@@ -77,15 +116,7 @@ sub get_blob {
     croak "unable to stat filesystem object: $!" unless defined $size;
     croak "file size does not match metadata"
         if defined $opts{size} && $size != $opts{size};
-    if (!$size) {
-        close $fh or croak "unable to close filesystem object: $!";
-        return '';
-    }
-
-    return Net::Blossom::Server::Backend::Filesystem::BlobStore::_Stream->new(
-        fh   => $fh,
-        size => $size,
-    );
+    return ($fh, $size);
 }
 
 sub delete_blob {
@@ -200,6 +231,19 @@ sub _constructor_args {
     return @_;
 }
 
+sub _range_options {
+    my ($opts) = @_;
+    croak "offset must be a non-negative integer"
+        unless defined $opts->{offset}
+        && !ref($opts->{offset})
+        && $opts->{offset} =~ /\A[0-9]+\z/;
+    croak "length must be a positive integer"
+        unless defined $opts->{length}
+        && !ref($opts->{length})
+        && $opts->{length} =~ /\A[1-9][0-9]*\z/;
+    return;
+}
+
 {
     package Net::Blossom::Server::Backend::Filesystem::BlobStore::_Upload;
 
@@ -310,7 +354,7 @@ sub _constructor_args {
     use strictures 2;
 
     use Carp qw(croak);
-    use Class::Tiny qw(fh size), { closed => 0 };
+    use Class::Tiny qw(fh size remaining), { closed => 0 };
 
     sub BUILD {
         my ($self) = @_;
@@ -325,8 +369,14 @@ sub _constructor_args {
             if !defined $length || ref($length) || $length !~ /\A[0-9]+\z/;
         $_[1] = '';
         return 0 unless $length;
+        return 0 if defined $self->{remaining} && !$self->{remaining};
+        $length = $self->{remaining}
+            if defined $self->{remaining} && $length > $self->{remaining};
         my $read = CORE::read($self->{fh}, $_[1], $length);
         croak "unable to read filesystem object: $!" unless defined $read;
+        croak "filesystem range ended before requested length"
+            if defined $self->{remaining} && !$read;
+        $self->{remaining} -= $read if defined $self->{remaining};
         return $read;
     }
 
@@ -416,6 +466,13 @@ Returns a file-backed upload writer.
 
 Returns C<''> for an empty file, a stream for a nonempty file, or C<undef> when
 the file is absent. When C<size> is supplied, a size mismatch is an error.
+
+=head2 get_blob_range
+
+Returns a bounded stream for the requested zero-based C<offset> and positive
+C<length>, or C<undef> when the file is absent. The stream starts at C<offset>
+and ends after C<length> bytes. When C<size> is supplied, a size mismatch is an
+error.
 
 =head2 delete_blob
 

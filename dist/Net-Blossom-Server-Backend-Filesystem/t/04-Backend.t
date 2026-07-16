@@ -38,6 +38,11 @@ my $sha256 = sha256_hex($first_body);
 my $first = _upload($storage, $first_body, 1);
 ok($first->created, 'first upload creates bytes');
 my $first_key = $metadata->find_blob($sha256)->{storage_key};
+my $range = $storage->get_blob_range($sha256, offset => 6, length => 4);
+my $range_body = '';
+is($range->read($range_body, 20), 4,
+    'backend range stream is bounded by requested length');
+is($range_body, 'gene', 'backend range retrieval returns requested bytes');
 my $duplicate = _upload($storage, $first_body, 2);
 ok(!$duplicate->created, 'duplicate upload reuses existing bytes');
 is($generation, 1, 'duplicate upload does not publish another file');
@@ -210,6 +215,7 @@ sub _reset_metadata {
     sub deploy_schema { shift->inner->deploy_schema(@_) }
     sub begin_upload { shift->inner->begin_upload(@_) }
     sub get_blob { shift->inner->get_blob(@_) }
+    sub get_blob_range { shift->inner->get_blob_range(@_) }
 
     sub delete_blob {
         my ($self, @args) = @_;

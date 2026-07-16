@@ -38,6 +38,7 @@ t/17-MediaAction.t
 t/18-MirrorAction.t
 t/19-MirrorFetcherHTTP.t
 t/20-ComponentContracts.t
+t/21-Range.t
 xt/00-author-pod-syntax.t
 xt/01-author-license-metadata.t
 xt/02-author-pod-coverage.t
