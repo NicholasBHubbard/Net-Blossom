@@ -43,3 +43,11 @@ Makefile.old
 /dist/Net-Blossom-Server-Backend-S3/cover_db/
 /dist/Net-Blossom-Server-Backend-S3/pm_to_blib
 /dist/Net-Blossom-Server-Backend-S3/Net-Blossom-Server-Backend-S3-*/
+
+/dist/Net-Blossom-Server-Backend-Filesystem/Makefile
+/dist/Net-Blossom-Server-Backend-Filesystem/MYMETA.json
+/dist/Net-Blossom-Server-Backend-Filesystem/MYMETA.yml
+/dist/Net-Blossom-Server-Backend-Filesystem/blib/
+/dist/Net-Blossom-Server-Backend-Filesystem/cover_db/
+/dist/Net-Blossom-Server-Backend-Filesystem/pm_to_blib
+/dist/Net-Blossom-Server-Backend-Filesystem/Net-Blossom-Server-Backend-Filesystem-*/

@@ -14,6 +14,7 @@ ok(-d "$root/dist/Net-Blossom-Server", 'Net-Blossom-Server distribution lives un
 ok(-d "$root/dist/Net-Blossom-Server-Backend-SQLite", 'Net-Blossom-Server-Backend-SQLite distribution lives under dist');
 ok(-d "$root/dist/Net-Blossom-Server-Backend-Postgres", 'Net-Blossom-Server-Backend-Postgres distribution lives under dist');
 ok(-d "$root/dist/Net-Blossom-Server-Backend-S3", 'Net-Blossom-Server-Backend-S3 distribution lives under dist');
+ok(-d "$root/dist/Net-Blossom-Server-Backend-Filesystem", 'Net-Blossom-Server-Backend-Filesystem distribution lives under dist');
 
 my $workflow = "$root/.github/workflows/ci.yml";
 ok(-f $workflow, 'GitHub Actions CI workflow exists');
@@ -47,6 +48,7 @@ if (-x $live_s3_gate) {
     }
     for my $path (
         'README.md',
+        'dist/Net-Blossom-Server-Backend-Filesystem/lib/Net/Blossom/Server/Backend/Filesystem.pm',
         'dist/Net-Blossom-Server-Backend-S3/Changes',
         'dist/Net-Blossom-Server-Backend-S3/xt/01-author-pod.t',
     ) {
@@ -129,6 +131,10 @@ like($yaml, qr/--publish\s+3902:3900/,
     'CI exposes a second Garage S3 gateway');
 like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom-Server-Backend-S3(?:\s|$)/,
     'CI installs S3 backend dependencies into local');
+like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom-Server-Backend-Filesystem(?:\s|$)/,
+    'CI installs filesystem backend dependencies into local');
+like($test_job, qr/\$root\/dist\/Net-Blossom-Server-Backend-Filesystem\/lib/,
+    'CI adds the filesystem backend source to PERL5LIB');
 like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/Net-Blossom-Server\/t/,
     'CI runs regular tests');
 like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/Net-Blossom-Server\/t\s+dist\/Net-Blossom-Server-Backend-SQLite\/t/,
@@ -137,10 +143,14 @@ like($yaml, qr/prove\s+dist\/Net-Blossom\/t\s+dist\/Net-Blossom\/t\/bud\s+dist\/
     'CI runs Postgres backend regular tests');
 like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/t/,
     'CI runs S3 backend regular tests');
+like($test_job, qr/dist\/Net-Blossom-Server-Backend-Filesystem\/t/,
+    'CI runs filesystem backend regular tests');
 like($yaml, qr/AUTHOR_TESTING=1\s+prove\s+dist\/Net-Blossom\/xt\s+dist\/Net-Blossom-Server\/xt\s+dist\/Net-Blossom-Server-Backend-SQLite\/xt\s+dist\/Net-Blossom-Server-Backend-Postgres\/xt/,
     'CI runs author tests');
 like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/xt/,
     'CI runs S3 backend author tests');
+like($test_job, qr/dist\/Net-Blossom-Server-Backend-Filesystem\/xt/,
+    'CI runs filesystem backend author tests');
 like($yaml, qr/if:\s+matrix\.perl-version\s+==\s+'latest'/,
     'CI gates coverage to latest Perl');
 like($yaml, qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*Devel::Cover\b/,
@@ -149,6 +159,8 @@ like($yaml, qr/COVERAGE_TESTING=1\s+AUTHOR_TESTING=1\s+prove\s+dist\/Net-Blossom
     'CI runs opt-in coverage author tests');
 like($yaml, qr/dist\/Net-Blossom-Server-Backend-S3\/xt\/04-author-coverage\.t/,
     'CI runs S3 backend coverage author test');
+like($test_job, qr/dist\/Net-Blossom-Server-Backend-Filesystem\/xt\/04-author-coverage\.t/,
+    'CI runs filesystem backend coverage author test');
 like($yaml, qr/^  ceph:\s*$/m,
     'CI has a dedicated mandatory Ceph job');
 like($yaml, qr/^  garage:\s*$/m,

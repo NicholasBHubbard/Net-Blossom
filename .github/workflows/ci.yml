@@ -90,6 +90,7 @@ jobs:
                 "$root/dist/Net-Blossom-Server-Backend-SQLite/lib",
                 "$root/dist/Net-Blossom-Server-Backend-Postgres/lib",
                 "$root/dist/Net-Blossom-Server-Backend-S3/lib",
+                "$root/dist/Net-Blossom-Server-Backend-Filesystem/lib",
                 "$root/local/lib/perl5",
                 "$root/local/lib/perl5/$Config::Config{archname}",
                 "$root/local/lib/perl5/$Config::Config{version}",
@@ -121,13 +122,16 @@ jobs:
       - name: Install S3 backend dependencies
         run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-S3
 
+      - name: Install filesystem backend dependencies
+        run: cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-Filesystem
+
       - name: Run tests
-        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t dist/Net-Blossom-Server-Backend-SQLite/t dist/Net-Blossom-Server-Backend-Postgres/t dist/Net-Blossom-Server-Backend-S3/t
+        run: prove dist/Net-Blossom/t dist/Net-Blossom/t/bud dist/Net-Blossom-Server/t dist/Net-Blossom-Server-Backend-SQLite/t dist/Net-Blossom-Server-Backend-Postgres/t dist/Net-Blossom-Server-Backend-S3/t dist/Net-Blossom-Server-Backend-Filesystem/t
 
       - name: Run author tests
         env:
           AUTHOR_TESTING: 1
-        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt dist/Net-Blossom-Server-Backend-SQLite/xt dist/Net-Blossom-Server-Backend-Postgres/xt dist/Net-Blossom-Server-Backend-S3/xt
+        run: AUTHOR_TESTING=1 prove dist/Net-Blossom/xt dist/Net-Blossom-Server/xt dist/Net-Blossom-Server-Backend-SQLite/xt dist/Net-Blossom-Server-Backend-Postgres/xt dist/Net-Blossom-Server-Backend-S3/xt dist/Net-Blossom-Server-Backend-Filesystem/xt
 
       - name: Install coverage dependencies
         if: matrix.perl-version == 'latest'
@@ -138,7 +142,7 @@ jobs:
         env:
           AUTHOR_TESTING: 1
           COVERAGE_TESTING: 1
-        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t dist/Net-Blossom-Server-Backend-SQLite/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-Postgres/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-S3/xt/04-author-coverage.t
+        run: COVERAGE_TESTING=1 AUTHOR_TESTING=1 prove dist/Net-Blossom/xt/06-author-coverage.t dist/Net-Blossom-Server/xt/05-author-coverage.t dist/Net-Blossom-Server-Backend-SQLite/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-Postgres/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-S3/xt/04-author-coverage.t dist/Net-Blossom-Server-Backend-Filesystem/xt/04-author-coverage.t
 
   garage:
     name: Garage three-node S3

@@ -10,8 +10,8 @@ my $dist = "$FindBin::Bin/..";
 my $version = '0.001000';
 
 my $module = do {
-    open my $fh, '<', "$dist/lib/Net/Blossom/Server/Backend/S3.pm"
-        or die "Unable to read S3.pm: $!";
+    open my $fh, '<', "$dist/lib/Net/Blossom/Server/Backend/Filesystem.pm"
+        or die "Unable to read Filesystem.pm: $!";
     local $/;
     <$fh>;
 };
@@ -24,14 +24,12 @@ my $makefile = do {
     local $/;
     <$fh>;
 };
-like($makefile, qr/^\s*VERSION_FROM\s*=>\s*'lib\/Net\/Blossom\/Server\/Backend\/S3\.pm',/m,
+like($makefile,
+    qr/^\s*VERSION_FROM\s*=>\s*'lib\/Net\/Blossom\/Server\/Backend\/Filesystem\.pm',/m,
     'Makefile.PL uses VERSION_FROM');
-like($makefile, qr/^\s*'Net::Amazon::S3'\s*=>\s*'0\.992',/m,
-    'Makefile.PL requires the tested S3 client version');
-like($makefile, qr/^\s*'HTTP::Message'\s*=>\s*'0',/m,
-    'Makefile.PL declares the direct HTTP test dependency');
 my ($runtime_requires) = $makefile =~ /PREREQ_PM\s*=>\s*\{(.*?)^\s*\},/ms;
-unlike($runtime_requires, qr/'Net::Blossom::Server::Backend::(?:SQLite|Postgres)'\s*=>/,
+unlike($runtime_requires,
+    qr/'Net::Blossom::Server::Backend::(?:SQLite|Postgres)'\s*=>/,
     'runtime dependencies do not select a metadata backend');
 
 my $changes = do {
@@ -44,17 +42,13 @@ like($changes, qr/^$version\s+\d{4}-\d{2}-\d{2}$/m,
 like($changes, qr/Initial CPAN release/, 'Changes records the initial release');
 unlike($changes, qr/C<[^>]+>/, 'Changes uses plain text');
 
-_check_manifest_files($dist);
+my $manifest = do {
+    open my $fh, '<', "$dist/MANIFEST" or die "Unable to read MANIFEST: $!";
+    local $/;
+    <$fh>;
+};
+unlike($manifest, qr/\.tar\.gz(?:\s|\z)/, 'MANIFEST excludes release archives');
+unlike($manifest, qr/^Net-Blossom.*-\d/m,
+    'MANIFEST excludes distribution directories');
 
 done_testing;
-
-sub _check_manifest_files {
-    my ($dist) = @_;
-    my $manifest = do {
-        open my $fh, '<', "$dist/MANIFEST" or die "Unable to read MANIFEST: $!";
-        local $/;
-        <$fh>;
-    };
-    unlike($manifest, qr/\.tar\.gz(?:\s|\z)/, 'MANIFEST excludes release archives');
-    unlike($manifest, qr/^Net-Blossom.*-\d/m, 'MANIFEST excludes distribution directories');
-}
