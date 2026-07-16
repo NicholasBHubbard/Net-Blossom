@@ -190,6 +190,18 @@ unlike($test_job, qr/dxflrs\/garage|NET_BLOSSOM_S3_ENDPOINT/,
     'Perl matrix runs simulated S3 tests without provisioning Garage');
 like($garage_job, qr/dxflrs\/garage:v2\.3\.0/,
     'dedicated Garage job provisions the live cluster');
+for my $job (
+    ['Garage', $garage_job],
+    ['Ceph', $ceph_job],
+) {
+    my ($name, $body) = @$job;
+    like($body,
+        qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom(?:\s|$)/,
+        "$name installs client dependencies");
+    like($body,
+        qr/cpanm\s+-llocal\b[^\n]*--notest\b[^\n]*--with-develop\b[^\n]*--installdeps\s+\.\/dist\/Net-Blossom-Server(?:\s|$)/,
+        "$name installs server dependencies");
+}
 like($garage_job, qr/dist\/Net-Blossom-Server-Backend-S3\/t\/20-LiveS3\.t.*?dist\/Net-Blossom-Server-Backend-S3\/t\/21-LiveMultiNode\.t/s,
     'Garage runs both live S3 tests');
 like($yaml, qr/Free disk space.*?tool-cache:\s*false/s,

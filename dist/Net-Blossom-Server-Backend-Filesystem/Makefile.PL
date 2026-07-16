@@ -17,6 +17,7 @@ WriteMakefile(
     PREREQ_PM        => {
         'Class::Tiny'          => '1.001',
         'Crypt::PRNG'          => '0',
+        'File::Sync'           => '0.11',
         'Net::Blossom'         => '0.001001',
         'Net::Blossom::Server' => '0.001002',
         'strictures'           => '2',

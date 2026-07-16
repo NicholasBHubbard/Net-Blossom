@@ -274,6 +274,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libpq-dev
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server
           cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-SQLite
           cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-Postgres
           cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-S3
@@ -467,6 +469,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libpq-dev
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom
+          cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server
           cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-SQLite
           cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-Postgres
           cpanm -llocal --notest --with-develop --installdeps ./dist/Net-Blossom-Server-Backend-S3

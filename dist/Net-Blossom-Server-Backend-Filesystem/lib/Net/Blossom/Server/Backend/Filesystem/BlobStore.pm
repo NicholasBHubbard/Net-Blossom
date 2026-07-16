@@ -9,6 +9,7 @@ use Errno qw(EEXIST ENOENT);
 use Fcntl qw(O_RDONLY);
 use File::Path qw(make_path);
 use File::Spec;
+use File::Sync qw(fsync);
 use File::Temp qw(tempfile);
 use IO::Handle;
 
@@ -182,7 +183,7 @@ sub _sync_directory {
     my ($path) = @_;
     sysopen my $fh, $path, O_RDONLY
         or croak "unable to open filesystem directory for sync: $!";
-    $fh->sync or croak "unable to sync filesystem directory: $!";
+    fsync($fh) or croak "unable to sync filesystem directory: $!";
     close $fh or croak "unable to close filesystem directory: $!";
     return 1;
 }
