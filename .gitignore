@@ -4,7 +4,7 @@
 /.plx/
 /blossom/
 /cover_db/
-/.agent-state
+/.agent-state/
 cpanfile
 *.tar.gz
 Makefile.old
