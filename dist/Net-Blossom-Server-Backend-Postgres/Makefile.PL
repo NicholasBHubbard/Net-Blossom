@@ -16,7 +16,7 @@ WriteMakefile(
     },
     PREREQ_PM        => {
         'Class::Tiny'          => '1.001',
-        'DBD::Pg'              => '3.16',
+        'DBD::Pg'              => '3.16.0',
         'DBI'                  => '0',
         'Net::Blossom'         => '0.001001',
         'Net::Blossom::Server' => '0.001003',

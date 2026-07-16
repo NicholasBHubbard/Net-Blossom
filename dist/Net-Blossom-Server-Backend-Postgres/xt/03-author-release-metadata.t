@@ -31,7 +31,7 @@ my $makefile = do {
 like($makefile, qr/^\s*VERSION_FROM\s*=>\s*'lib\/Net\/Blossom\/Server\/Backend\/Postgres\.pm',/m, 'Makefile.PL uses VERSION_FROM');
 like($makefile, qr/^\s*'Net::Blossom'\s*=>\s*'\Q$net_blossom_version\E',/m, 'Makefile.PL depends on the released Net::Blossom version');
 like($makefile, qr/^\s*'Net::Blossom::Server'\s*=>\s*'\Q$server_version\E',/m, 'Makefile.PL depends on the component-contract server version');
-like($makefile, qr/^\s*'DBD::Pg'\s*=>\s*'3\.16',/m, 'Makefile.PL requires 64-bit pg_lo seek support');
+like($makefile, qr/^\s*'DBD::Pg'\s*=>\s*'3\.16\.0',/m, 'Makefile.PL requires 64-bit pg_lo seek support');
 
 my $changes_path = "$dist/Changes";
 ok(-f $changes_path, 'Changes exists');
