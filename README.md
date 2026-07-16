@@ -9,8 +9,8 @@ This repo contains multiple CPAN distributions:
 - `dist/Net-Blossom-Server`: server-side support and storage backend contracts.
 - `dist/Net-Blossom-Server-Backend-SQLite`: SQLite storage backend.
 - `dist/Net-Blossom-Server-Backend-Postgres`: Postgres storage backend.
-- `dist/Net-Blossom-Server-Backend-S3`: S3-compatible blob storage backend.
 - `dist/Net-Blossom-Server-Backend-Filesystem`: filesystem blob storage backend.
+- `dist/Net-Blossom-Server-Backend-S3`: S3-compatible blob storage backend.
 
 ## Contributing
 
